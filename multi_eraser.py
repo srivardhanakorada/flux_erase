@@ -1,0 +1,224 @@
+# multi_concept_runner.py
+import os
+import math
+import torch  # type: ignore
+from PIL import Image  # type: ignore
+from diffusers import FluxPipeline  # type: ignore
+
+# -----------------------------
+# Config
+# -----------------------------
+MODEL_ID = "black-forest-labs/FLUX.1-schnell"
+
+# Celebrity eraser spec
+TARGETS_AND_RETAINS = {
+    "Donald Trump": ["Melania Trump", "Barack Obama", "Hillary Clinton"],
+    "Christiano Ronaldo": ["Lionel Messi", "Zlatan Ibrahimović", "Sergio Ramos"],
+    "Michael Jackson": ["Taylor Swift", "Ed Sheeran", "Justin Bieber"],
+}
+
+TARGETS = list(TARGETS_AND_RETAINS.keys())
+RETAINS_COMBINED = sorted({r for rs in TARGETS_AND_RETAINS.values() for r in rs})
+
+# Sampling
+OUTDIR = "multi_concept_eraser_out_four"
+os.makedirs(OUTDIR, exist_ok=True)
+
+N_SAMPLES = 1
+BASE_SEED = 0
+STEPS = 4
+GUIDANCE = 3.5
+H, W = 768, 768
+
+# Projection / adaptive gating knobs
+DUAL_BLOCKS = list(range(0, 19))
+SINGLE_BLOCKS = list(range(0, 38))
+
+PROJ_STRENGTH = 6.0
+PROJ_EPS = 1e-8
+VT_DEDUP_COS_THR = 0.98
+MAX_TARGET_VT_PER_BLOCK = 8
+MAX_RETAIN_VT_PER_BLOCK = 16
+
+# Adaptive token gating (your "adaptive thing")
+STRENGTH_TAU = 0.0
+STRENGTH_GAMMA = 3.0
+
+# If you want to compare to "loose" adaptive parameters quickly:
+# STRENGTH_TAU = -0.2
+# STRENGTH_GAMMA = 2.0
+
+# Optional: save retain/target record images too
+SAVE_RECORD_IMAGES = False
+
+
+# -----------------------------
+# Helpers
+# -----------------------------
+def prompt_for_person(name: str) -> str:
+    # Keep it simple + consistent across runs
+    return f"a photo of {name}"
+
+def make_generator(seed: int, device: torch.device) -> torch.Generator:
+    g = torch.Generator(device=device)
+    g.manual_seed(int(seed))
+    return g
+
+def save_img(img: Image.Image, path: str):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    img.save(path)
+
+def save_grid(imgs, path: str, cols: int):
+    assert len(imgs) > 0
+    w, h = imgs[0].size
+    rows = math.ceil(len(imgs) / cols)
+    grid = Image.new("RGB", (cols * w, rows * h), (0, 0, 0))
+    for i, im in enumerate(imgs):
+        r = i // cols
+        c = i % cols
+        grid.paste(im, (c * w, r * h))
+    save_img(grid, path)
+
+def ja_kwargs_common():
+    # All kwargs that must consistently be passed into the transformer attention processor.
+    return dict(
+        target_block_indices=DUAL_BLOCKS,
+        target_single_block_indices=SINGLE_BLOCKS,
+        proj_strength=PROJ_STRENGTH,
+        proj_eps=PROJ_EPS,
+        strength_tau=STRENGTH_TAU,
+        strength_gamma=STRENGTH_GAMMA,
+        vt_dedup_cos_thr=VT_DEDUP_COS_THR,
+        max_target_vt_per_block=MAX_TARGET_VT_PER_BLOCK,
+        max_retain_vt_per_block=MAX_RETAIN_VT_PER_BLOCK,
+    )
+
+@torch.no_grad()
+def run_one(pipe: FluxPipeline, prompt: str, *, ja: dict, seed: int):
+    device = pipe._execution_device
+    g = make_generator(seed, device=device)
+    out = pipe(
+        prompt=prompt,
+        num_inference_steps=STEPS,
+        guidance_scale=GUIDANCE,
+        height=H,
+        width=W,
+        num_images_per_prompt=1,
+        generator=g,
+        joint_attention_kwargs=ja,
+        disable_clip=False,
+    )
+    return out.images[0]
+
+
+# -----------------------------
+# Main
+# -----------------------------
+def main():
+    pipe = FluxPipeline.from_pretrained(
+        MODEL_ID,
+        torch_dtype=torch.bfloat16,
+    )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    pipe = pipe.to(device)
+
+    # Optional speed/memory
+    pipe.set_progress_bar_config(disable=False)
+
+    # Reset banks + concept list ONCE for this full multi-concept build
+    # (stores combined retains, then multiple targets)
+    from diffusers.models.transformers.transformer_flux import flux_reset_vt_banks
+    flux_reset_vt_banks(reset_retain=True)
+
+    # -----------------------------------------
+    # 1) RETAIN recording pass (combined retains)
+    # -----------------------------------------
+    print(f"[1/3] Recording retain VT banks for {len(RETAINS_COMBINED)} retain concepts...")
+    for i, retain in enumerate(RETAINS_COMBINED):
+        ja = ja_kwargs_common()
+        ja.update(
+            record_retain_vt=True,
+            record_target_vt=False,
+            apply_target_proj=False,
+        )
+        p = retain
+        seed = BASE_SEED + 1000 + i
+
+        img = run_one(pipe, p, ja=ja, seed=seed)
+        if SAVE_RECORD_IMAGES:
+            save_img(img, os.path.join(OUTDIR, "record_retain", f"{i:02d}_{retain}.png"))
+
+    # -----------------------------------------
+    # 2) TARGET recording pass (all targets)
+    #    This also appends concept embeds (C_list)
+    # -----------------------------------------
+    print(f"[2/3] Recording target VT banks for {len(TARGETS)} targets...")
+    for i, target in enumerate(TARGETS):
+        ja = ja_kwargs_common()
+        ja.update(
+            record_retain_vt=False,
+            record_target_vt=True,
+            apply_target_proj=False,
+        )
+        p = target
+        seed = BASE_SEED + 2000 + i
+
+        img = run_one(pipe, p, ja=ja, seed=seed)
+        if SAVE_RECORD_IMAGES:
+            save_img(img, os.path.join(OUTDIR, "record_target", f"{i:02d}_{target}.png"))
+
+    # -----------------------------------------
+    # 3) APPLY pass (eraser active)
+    #    Make grids for: each target + each retain
+    #    Save baseline (no proj) alongside erased.
+    # -----------------------------------------
+    print("[3/3] Applying multi-concept eraser and sampling images...")
+
+    # Evaluate on targets and retains (you can add more probes)
+    PROBES = [("target", t) for t in TARGETS] + [("retain", r) for r in RETAINS_COMBINED]
+
+    for kind, concept in PROBES:
+        p = prompt_for_person(concept)
+
+        # --- baseline (no projection)
+        base_imgs = []
+        for n in range(N_SAMPLES):
+            ja = ja_kwargs_common()
+            ja.update(
+                record_retain_vt=False,
+                record_target_vt=False,
+                apply_target_proj=False,
+            )
+            img = run_one(pipe, p, ja=ja, seed=BASE_SEED + 3000 + 100 * hash(concept) % 10000 + n)
+            base_imgs.append(img)
+
+        # --- erased (projection ON)
+        erased_imgs = []
+        for n in range(N_SAMPLES):
+            ja = ja_kwargs_common()
+            ja.update(
+                record_retain_vt=False,
+                record_target_vt=False,
+                apply_target_proj=True,
+            )
+            img = run_one(pipe, p, ja=ja, seed=BASE_SEED + 4000 + 100 * hash(concept) % 10000 + n)
+            erased_imgs.append(img)
+
+        # Save grids
+        safe_name = concept.replace("/", "_")
+        save_grid(base_imgs, os.path.join(OUTDIR, "grids", f"{kind}__{safe_name}__baseline.png"), cols=min(N_SAMPLES, 5))
+        save_grid(erased_imgs, os.path.join(OUTDIR, "grids", f"{kind}__{safe_name}__erased.png"), cols=min(N_SAMPLES, 5))
+
+        # Optional: also save individuals
+        for n, im in enumerate(base_imgs):
+            save_img(im, os.path.join(OUTDIR, "samples", kind, safe_name, f"baseline_{n:02d}.png"))
+        for n, im in enumerate(erased_imgs):
+            save_img(im, os.path.join(OUTDIR, "samples", kind, safe_name, f"erased_{n:02d}.png"))
+
+        print(f"  ✓ {kind}: {concept}")
+
+    print(f"\nDone. Results in: {OUTDIR}")
+    print("Tip: check grids/ first (baseline vs erased).")
+
+
+if __name__ == "__main__": main()

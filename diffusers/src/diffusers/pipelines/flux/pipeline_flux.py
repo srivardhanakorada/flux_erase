@@ -530,42 +530,57 @@ class FluxPipeline(
         self._joint_attention_kwargs["proj_token_end"] = proj_end
         # ------------------------------------------------------------------
 
-        ### ADDED (concept embedding store on record pass; mean over concept tokens only, skip token0)
+        ### ADDED (concept embedding store on record pass; mean over [0:proj_end))
         try:
-            from diffusers.models.transformers.transformer_flux import flux_set_concept_embed
+            from diffusers.models.transformers.transformer_flux import flux_add_concept_embed
             if bool(self._joint_attention_kwargs.get("record_target_vt", False)) and (not bool(self._joint_attention_kwargs.get("apply_target_proj", False))):
                 s0 = 0
                 e0 = proj_end
-                E0 = prompt_embeds[:, s0:e0, :]
-                c = E0.mean(dim=1, keepdim=False)[:1]
+                E0 = prompt_embeds[:, s0:e0, :]      # [B,T,D]
+                c = E0.mean(dim=1, keepdim=False)[:1]  # [1,D]
                 c = c / (c.norm(dim=-1, keepdim=True) + 1e-8)
-                flux_set_concept_embed(c)
+                flux_add_concept_embed(c)  # <-- APPEND, don't overwrite
         except Exception:
             pass
 
         ### ADDED (adaptive per-token proj strengths on apply pass)
         try:
-            from diffusers.models.transformers.transformer_flux import flux_get_concept_embed
-            #not touching gating function for preserve set.
+            from diffusers.models.transformers.transformer_flux import flux_get_concept_embeds
+
             if bool(self._joint_attention_kwargs.get("apply_target_proj", False)):
-                c = flux_get_concept_embed()
-                # print(c.shape)
-                if c is not None:
-                    tau = float(self._joint_attention_kwargs.get("strength_tau", 0.2))
+                C_list = flux_get_concept_embeds()  # list of [1,D]
+                if C_list is not None and len(C_list) > 0:
+                    tau   = float(self._joint_attention_kwargs.get("strength_tau", 0.2))
                     gamma = float(self._joint_attention_kwargs.get("strength_gamma", 2.0))
-                    smax = float(self._joint_attention_kwargs.get("proj_strength", 1.0))
-                    T = int(self._joint_attention_kwargs.get("proj_token_end", proj_end))
-                    E = prompt_embeds[:, :T, :]
-                    E_n = E / (E.norm(dim=-1, keepdim=True) + 1e-8)
-                    r = (E_n * c.view(1, 1, -1)).sum(dim=-1)[0]
-                    g = ((r - tau) / (1.0 - tau)).clamp(0.0, 1.0) ** gamma
+                    smax  = float(self._joint_attention_kwargs.get("proj_strength", 1.0))
+                    T     = int(self._joint_attention_kwargs.get("proj_token_end", proj_end))
+
+                    E = prompt_embeds[:, :T, :]                         # [B,T,D]
+                    E_n = E / (E.norm(dim=-1, keepdim=True) + 1e-8)     # [B,T,D]
+
+                    # Stack concepts: [K,D]
+                    C = torch.cat([c for c in C_list], dim=0).to(device=E_n.device, dtype=E_n.dtype)  # [K,D]
+
+                    # r[b,t,k] = cos(E_n[b,t], C[k])
+                    r = torch.einsum("btd,kd->btk", E_n, C)  # [B,T,K]
+
+                    # Aggregate across concepts: max match to ANY target
+                    r_any = r.max(dim=-1).values  # [B,T]
+
+                    # Map to strength
+                    g = ((r_any - tau) / (1.0 - tau)).clamp(0.0, 1.0) ** gamma
                     g = (smax * g).to(device=prompt_embeds.device, dtype=prompt_embeds.dtype)
-                    if g.numel() > 0: g[0] = 0.0
+
+                    # Optional: keep token0 off
+                    # if g.shape[1] > 0:
+                    #     g[:, 0] = 0.0
+
+                    # Store as [L] or [B,L]; your transformer expects [L] or [1,L]
                     Lfull = prompt_embeds.shape[1]
-                    gst = torch.zeros(Lfull, device=prompt_embeds.device, dtype=prompt_embeds.dtype)
-                    gst[:T] = g
-                    # print("gst:", gst)
-                    self._joint_attention_kwargs["proj_strength_tokens"] = gst
+                    gst = torch.zeros((g.shape[0], Lfull), device=prompt_embeds.device, dtype=prompt_embeds.dtype)
+                    gst[:, :T] = g
+                    # If you always run batch=1, you can store gst[0]; but keeping [B,L] is fine too.
+                    self._joint_attention_kwargs["proj_strength_tokens"] = gst[0]
         except Exception:
             pass
 

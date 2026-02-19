@@ -29,118 +29,190 @@ from ..normalization import AdaLayerNormContinuous, AdaLayerNormZero, AdaLayerNo
 # -----------------------------------------------------------------------------
 _FLUX_TARGET_VT = None
 _FLUX_TARGET_VT_READY = False
-_FLUX_TARGET_VT_BANK: Dict[int, torch.Tensor] = {}
+_FLUX_TARGET_VT_BANK: Dict[int, List[torch.Tensor]] = {}
+_FLUX_SINGLE_VT_BANK: Dict[int, List[torch.Tensor]] = {}
 _FLUX_TARGET_VT_READY_SET = set()
-_FLUX_SINGLE_VT_BANK: Dict[int, torch.Tensor] = {}
 _FLUX_SINGLE_VT_READY_SET = set()
-_FLUX_CONCEPT_C = None
-_FLUX_PRINT_STRENGTH_EVERY = 32
 _FLUX_PRINT_STRENGTH_COUNT = 0
-_FLUX_SINGLE_VT_BANK_RETAIN: Dict[int, list[torch.Tensor]] = {}
+_FLUX_SINGLE_VT_BANK_RETAIN: Dict[int, List[torch.Tensor]] = {}
 _FLUX_SINGLE_VT_READY_SET_RETAIN = set()
-_FLUX_TARGET_VT_BANK_RETAIN: Dict[int, list[torch.Tensor]] = {}
+_FLUX_TARGET_VT_BANK_RETAIN: Dict[int, List[torch.Tensor]] = {}
 _FLUX_TARGET_VT_READY_SET_RETAIN = set()
+_MAX_VT_PER_BLOCK = 8          # keep small (4–16)
+_VT_DEDUP_COS_THR = 0.98       # higher = stricter dedup (0.97–0.995)
+_FLUX_MAX_TARGET_VT_PER_BLOCK = 8
+_FLUX_MAX_RETAIN_VT_PER_BLOCK = 16
 logger = logging.get_logger(__name__)
 
-def _flux_debug_print_strength(
-    block_index: Optional[int],
-    is_dual: bool,
-    s: int,
-    e: int,
-    proj_strength: float,
-    proj_strength_tokens: Optional[torch.Tensor],
-    strength_tau: float,
-    strength_gamma: float,
-    g_slice: Optional[torch.Tensor] = None,
-    alpha: Optional[torch.Tensor] = None,
-):
+# ---- Multi-concept adaptive gating ----
+_FLUX_CONCEPT_C_LIST: List[torch.Tensor] = []  # each: [1, D] (normalized)
+
+def flux_reset_concept_embeds():
+    global _FLUX_CONCEPT_C_LIST
+    _FLUX_CONCEPT_C_LIST = []
+
+def flux_add_concept_embed(c: torch.Tensor):
     """
-    tqdm-safe debug printer:
-      - Uses tqdm.write() to avoid breaking progress bars
-      - Falls back to print() if tqdm isn't available
+    c: [1,D] or [D]. Stores normalized [1,D] in a list.
     """
+    global _FLUX_CONCEPT_C_LIST
+    if c.ndim == 1:
+        c = c.view(1, -1)
+    c = c.detach().contiguous()
+    c = c / (c.norm(dim=-1, keepdim=True) + 1e-8)
+    _FLUX_CONCEPT_C_LIST.append(c)
+
+def flux_get_concept_embeds():
+    """
+    Returns: list of [1,D]
+    """
+    global _FLUX_CONCEPT_C_LIST
+    return _FLUX_CONCEPT_C_LIST
+
+def flux_reset_vt_banks(reset_retain: bool = True):
+    """
+    Clears all stored VT banks so a new concept run does not reuse previous concept signals.
+    Call this before starting a new concept (and optionally before each prompt batch).
+    """
+    global _FLUX_TARGET_VT, _FLUX_TARGET_VT_READY
+    global _FLUX_TARGET_VT_BANK, _FLUX_SINGLE_VT_BANK
+    global _FLUX_TARGET_VT_READY_SET, _FLUX_SINGLE_VT_READY_SET
+    global _FLUX_TARGET_VT_BANK_RETAIN, _FLUX_SINGLE_VT_BANK_RETAIN
+    global _FLUX_TARGET_VT_READY_SET_RETAIN, _FLUX_SINGLE_VT_READY_SET_RETAIN
     global _FLUX_PRINT_STRENGTH_COUNT
 
-    _FLUX_PRINT_STRENGTH_COUNT += 1
-    if (_FLUX_PRINT_STRENGTH_COUNT % _FLUX_PRINT_STRENGTH_EVERY) != 0:
+    _FLUX_TARGET_VT = None
+    _FLUX_TARGET_VT_READY = False
+
+    _FLUX_TARGET_VT_BANK.clear()
+    _FLUX_SINGLE_VT_BANK.clear()
+
+    _FLUX_TARGET_VT_READY_SET.clear()
+    _FLUX_SINGLE_VT_READY_SET.clear()
+
+    if reset_retain:
+        _FLUX_TARGET_VT_BANK_RETAIN.clear()
+        _FLUX_SINGLE_VT_BANK_RETAIN.clear()
+        _FLUX_TARGET_VT_READY_SET_RETAIN.clear()
+        _FLUX_SINGLE_VT_READY_SET_RETAIN.clear()
+
+    # Optional: keeps debug printing cadence consistent per concept
+    _FLUX_PRINT_STRENGTH_COUNT = 0
+    flux_reset_concept_embeds()
+
+def _append_vt_capped(
+    bank: Dict[int, List[torch.Tensor]],
+    block_index: int,
+    vt_new: torch.Tensor,
+    *,
+    max_keep: int = _MAX_VT_PER_BLOCK,
+):
+    """
+    Append vt_new into bank[block_index] with:
+      - cosine dedup (global threshold)
+      - capacity cap (keep most recent)
+    vt_new: [1,L,H,Dh]
+    """
+    if block_index not in bank:
+        bank[block_index] = []
+
+    lst = bank[block_index]
+    if len(lst) == 0:
+        lst.append(vt_new.detach())
         return
 
-    # Lazy import so diffusers core doesn't require tqdm
-    try:
-        from tqdm.auto import tqdm as _tqdm #type:ignore
-        _write = _tqdm.write
-    except Exception:
-        _write = print
-
+    # Dedup: compare flattened direction (normalize)
     with torch.no_grad():
-        # ---- g stats ----
-        if g_slice is None and proj_strength_tokens is not None:
-            g_all = proj_strength_tokens
-            if g_all.ndim == 2:
-                g_all = g_all[0]
-            g_slice = g_all[s:e]
+        x = vt_new.reshape(-1).to(torch.float32)
+        x = x / (x.norm() + 1e-8)
 
-        if g_slice is None:
-            mn = mx = mean = float(proj_strength)
-            nz = int(e - s)
-        else:
-            g = g_slice.detach().float().flatten()
-            mn = float(g.min().item())
-            mx = float(g.max().item())
-            mean = float(g.mean().item())
-            nz = int((g > 1e-6).sum().item())
+        best = -1.0
+        for vt_old in lst:
+            y = vt_old.reshape(-1).to(torch.float32)
+            y = y / (y.norm() + 1e-8)
+            sim = float((x * y).sum().item())
+            if sim > best:
+                best = sim
 
-        # ---- alpha stats ----
-        if alpha is None:
-            a_min = a_mean = a_max = float("nan")
-        else:
-            a = alpha.detach().float().abs().flatten()
-            a_min = float(a.min().item())
-            a_mean = float(a.mean().item())
-            a_max = float(a.max().item())
+        if best >= _VT_DEDUP_COS_THR:
+            return  # too similar, skip
 
-        stream = "DUAL" if is_dual else "SINGLE"
-        b = -1 if block_index is None else int(block_index)
-        tok_len = max(0, int(e - s))
+    lst.append(vt_new.detach())
 
-        _write(
-            f"[PROJ_STRENGTH] stream={stream} block={b} tok=[{s}:{e}) "
-            f"tau={float(strength_tau):.4f} gamma={float(strength_gamma):.4f} "
-            f"base={float(proj_strength):.4f} "
-            f"g(min/mean/max)={mn:.4f}/{mean:.4f}/{mx:.4f} nz={nz}/{tok_len} "
-            f"alpha_abs(min/mean/max)={a_min:.4f}/{a_mean:.4f}/{a_max:.4f}"
-        )
+    # Cap
+    if max_keep is not None and max_keep > 0 and len(lst) > max_keep:
+        del lst[0 : (len(lst) - max_keep)]
 
-def flux_set_concept_embed(c: torch.Tensor):
-    global _FLUX_CONCEPT_C
-    _FLUX_CONCEPT_C = c.detach().contiguous()
+def _with_dedup_thr(thr: float, fn):
+    global _VT_DEDUP_COS_THR
+    old = _VT_DEDUP_COS_THR
+    _VT_DEDUP_COS_THR = float(thr)
+    try:
+        return fn()
+    finally:
+        _VT_DEDUP_COS_THR = old
 
-def flux_get_concept_embed():
-    global _FLUX_CONCEPT_C
-    return _FLUX_CONCEPT_C
-
-def _make_lasttoken_duplicated_vt(
-    vt: torch.Tensor,
-    last_token_index: int = -1,
+def _project_out_span(
+    v_slice: torch.Tensor,          # [B, T, D]
+    vt_list: List[torch.Tensor],    # list of [1, L, H, Dh]
+    *,
+    s: int,
+    e: int,
+    eps: float,
+    strength: float,
+    strength_tokens: Optional[torch.Tensor] = None,  # [L] or [1,L]
 ) -> torch.Tensor:
     """
-    vt: [1, L, H, Dh]
-    Returns vt2 where positions [1:] are filled with the last-token value vector,
-    and vt2[:,0] is zeroed.
+    Remove projection of v_slice onto span of {vt_list[k]} at each token.
+    v_slice: [B,T,D] where T = e-s
+    vt_list[k]: [1, L, H, Dh] (we will flatten to [T,D] using same slice)
     """
-    assert vt.ndim == 4 and vt.shape[0] == 1, f"Expected vt [1,L,H,Dh], got {tuple(vt.shape)}"
-    L = vt.shape[1]
-    idx = last_token_index
-    if idx < 0: idx = L + idx
-    idx = max(0, min(idx, L - 1))
-    idx = 0
-    v_last = vt[:, idx : idx + 1, :, :]  # [1,1,H,Dh]
-    # print(f"idx:{idx}")
-    vt2 = vt.clone()
-    start_fill = 1
-    if L > start_fill: vt2[:, start_fill:, :, :] = v_last.expand(1, L - start_fill, vt.shape[2], vt.shape[3])
-    vt2[:, 0, :, :] = 0.0
-    return vt2
+    if len(vt_list) == 0:
+        return v_slice
+
+    B, T, D = v_slice.shape
+    K = len(vt_list)
+    e = s + T
+
+    # Build V_tok: [T, K, D]
+    V_tok = []
+    for vt in vt_list:
+        vt_flat = vt.reshape(1, vt.shape[1], -1)  # [1,L,D]
+        V_tok.append(vt_flat[0, s:e, :])          # [T,D]
+    V_tok = torch.stack(V_tok, dim=1)            # [T,K,D]
+
+    # Do solve in float32 for stability
+    V32 = V_tok.to(torch.float32)
+    v32 = v_slice.to(torch.float32)
+
+    # Gram matrices per token: G[t] = V[t]^T V[t]  -> [T,K,K]
+    G = torch.einsum("tkd,tld->tkl", V32, V32)
+
+    # Add eps * I
+    I = torch.eye(K, device=G.device, dtype=G.dtype).view(1, K, K)
+    G = G + eps * I
+
+    # rhs: V^T v  -> [B,T,K]
+    rhs = torch.einsum("tkd,btd->btk", V32, v32)
+
+    # Solve (batched): beta = (G)^{-1} rhs
+    # Expand G to [B,T,K,K]
+    beta = torch.linalg.solve(G.unsqueeze(0).expand(B, -1, -1, -1), rhs.unsqueeze(-1)).squeeze(-1)  # [B,T,K]
+
+    # removed = V beta  -> [B,T,D]
+    removed = torch.einsum("tkd,btk->btd", V32, beta)
+
+    # Apply strengths
+    if strength_tokens is None:
+        v32 = v32 - float(strength) * removed
+    else:
+        g_all = strength_tokens
+        if g_all.ndim == 2:
+            g_all = g_all[0]
+        g = g_all[s:e].to(device=v_slice.device, dtype=torch.float32).view(1, T, 1)  # [1,T,1]
+        v32 = v32 - (g * removed)
+
+    return v32.to(dtype=v_slice.dtype)
 
 def _make_attn01_duplicated_vt(
     vt: torch.Tensor,
@@ -195,16 +267,8 @@ def _make_attn01_duplicated_vt(
         vt2[:, 0, :, :] = 0.0
     return vt2 
 
-def projection_retain(v_list: list[torch.Tensor],top_k = 3):
-    """
-    Given a list of VT tensors to retain, compute a single retain vector by averaging them and normalizing.
-    """
-    # each tensor is 1 x 512 x 24 x 128
-    # convert each to 512 x 3072 first
-    # perform singular value decomposition of each of these matrices to extract top basis vectors for each of them. 
-    # we take top 3 basis vectors from each of the tensors and concatenate them into a single (3xN)x 3072 matrix, then we perform a final SVD on this matrix and extract top 3 singular vectors
-    # we generate a projection matrix using these extracted 3 singular vectors. 
-    if len(v_list) == 0:
+def projection_retain(v_list: Optional[list[torch.Tensor]], top_k=3):
+    if (v_list is None) or (len(v_list) == 0):
         return None
     # print("length of v_list:",len(v_list))  # len of retain list
     v_temp = [v.squeeze(0).reshape(v.shape[1], -1).to(torch.float32).T for v in v_list]  # list of [3072,512]
@@ -282,6 +346,9 @@ class FluxAttnProcessor:
         proj_strength_tokens: Optional[torch.Tensor] = None,  # adaptive per-token strength (optional)
         strength_tau: float = 0.2,
         strength_gamma: float = 1.0,
+        vt_dedup_cos_thr: Optional[float] = None,
+        max_target_vt_per_block: Optional[int] = None,
+        max_retain_vt_per_block: Optional[int] = None,
     ) -> torch.Tensor:
         # ---------------------------
         # QKV
@@ -296,6 +363,14 @@ class FluxAttnProcessor:
         query = attn.norm_q(query)
         key = attn.norm_k(key)
 
+        # Per-call overrides (fallback to globals)
+        dedup_thr = float(_VT_DEDUP_COS_THR) if vt_dedup_cos_thr is None else float(vt_dedup_cos_thr)
+        max_tgt  = int(_FLUX_MAX_TARGET_VT_PER_BLOCK) if max_target_vt_per_block is None else int(max_target_vt_per_block)
+        max_ret  = int(_FLUX_MAX_RETAIN_VT_PER_BLOCK) if max_retain_vt_per_block is None else int(max_retain_vt_per_block)
+
+        # if block_index == 0 and record_target_vt:
+        #     print("VT CFG:", dedup_thr, max_tgt, max_ret)
+
         # ---------------------------
         # SINGLE stream: encoder_hidden_states is None
         # ---------------------------
@@ -308,7 +383,7 @@ class FluxAttnProcessor:
             # Be robust if None
             target_single_block_indices = target_single_block_indices or []
 
-            if (((record_target_vt and (block_index not in _FLUX_SINGLE_VT_READY_SET)) or (record_retain_vt and (block_index not in _FLUX_SINGLE_VT_READY_SET_RETAIN))) and (block_index in target_single_block_indices)):
+            if ((record_target_vt or record_retain_vt) and (block_index in target_single_block_indices)):
                 # vt_single = value[:, :text_seq_len].detach()
                 # vt_single = vt_single[:1].contiguous()
                 # vt_single = _make_lasttoken_duplicated_vt(vt_single, last_token_index=-1)
@@ -330,71 +405,47 @@ class FluxAttnProcessor:
                     vt_all_head = vt_all_head @ (torch.eye(vt_all_head.shape[-1], device=vt_all_head.device, dtype=vt_all_head.dtype) - retain_proj) # project to orthogonal complement of retain space
                     vt_single = vt_all_head.reshape(vt_single.shape)
                     # vt_single = vt_single - (retain_signal * (vt_single * retain_signal).sum(dim=-1, keepdim=True) / (retain_signal * retain_signal).sum(dim=-1, keepdim=True).clamp_min(1e-8))
-                    _FLUX_SINGLE_VT_BANK[block_index] = vt_single
+                    _with_dedup_thr(
+                        dedup_thr,
+                        lambda: _append_vt_capped(_FLUX_SINGLE_VT_BANK, block_index, vt_single, max_keep=max_tgt),
+                    )
                     _FLUX_SINGLE_VT_READY_SET.add(block_index)
-                elif(record_retain_vt):
-                    if(block_index not in _FLUX_SINGLE_VT_BANK_RETAIN):
-                        _FLUX_SINGLE_VT_BANK_RETAIN[block_index] = []
-                    _FLUX_SINGLE_VT_BANK_RETAIN[block_index].append(vt_single)
+                elif record_retain_vt:
+                    _with_dedup_thr(
+                        dedup_thr,
+                        lambda: _append_vt_capped(
+                            _FLUX_SINGLE_VT_BANK_RETAIN,
+                            block_index,
+                            vt_single,
+                            max_keep=max_ret,
+                        ),
+                    )
                     _FLUX_SINGLE_VT_READY_SET_RETAIN.add(block_index)
 
             do_apply_single = (
                 apply_target_proj
                 and (block_index in target_single_block_indices)
                 and (block_index in _FLUX_SINGLE_VT_BANK)
-                and (proj_token_end is not None)
             )
 
             if do_apply_single:
-                vt = _FLUX_SINGLE_VT_BANK[block_index]
-                if vt.device != value.device or vt.dtype != value.dtype:
-                    vt = vt.to(device=value.device, dtype=value.dtype)
-
+                vt_list = _FLUX_SINGLE_VT_BANK.get(block_index, [])
+                vt_list = [vt.to(device=value.device, dtype=value.dtype) for vt in vt_list]
                 v_txt = value[:, :text_seq_len].reshape(value.shape[0], text_seq_len, -1)
-                vt_flat = vt.reshape(1, text_seq_len, -1)
-
-                s,e = 0,int(proj_token_end)
-                # print(f"s,e:{s},{e}")
-                v_slice = v_txt[:, s:e, :]
-                vt_slice = vt_flat[:, s:e, :]
-
-                vt_norm2 = (vt_slice * vt_slice).sum(-1, keepdim=True)
-                denom = vt_norm2.clamp_min(proj_eps)
-                alpha = (v_slice * vt_slice).sum(-1, keepdim=True) / denom
-
-                if proj_strength_tokens is None:
-                    v_slice = v_slice - (proj_strength * alpha * vt_slice)
-                    _flux_debug_print_strength(
-                        block_index=block_index,
-                        is_dual=False,
-                        s=s,
-                        e=e,
-                        proj_strength=proj_strength,
-                        proj_strength_tokens=None,
-                        strength_tau=strength_tau,
-                        strength_gamma=strength_gamma,
-                        g_slice=None,
-                        alpha=alpha,
-                    )
-                else:
-                    g_all = proj_strength_tokens
-                    if g_all.ndim == 2:
-                        g_all = g_all[0]
-                    g_slice = g_all[s:e].to(device=v_slice.device, dtype=v_slice.dtype).view(1, e - s, 1)
-                    v_slice = v_slice - ((g_slice * alpha) * vt_slice)
-                    _flux_debug_print_strength(
-                        block_index=block_index,
-                        is_dual=False,
-                        s=s,
-                        e=e,
-                        proj_strength=proj_strength,
-                        proj_strength_tokens=proj_strength_tokens,
-                        strength_tau=strength_tau,
-                        strength_gamma=strength_gamma,
-                        g_slice=g_slice.view(-1),
-                        alpha=alpha,
-                    )
-
+                s = 0
+                e_req = proj_token_end
+                e = text_seq_len if (e_req is None) else int(e_req)
+                e = max(s, min(e, v_txt.shape[1]))  # clamp
+                v_slice = v_txt[:, s:e, :]  # [B,T,D]
+                v_slice = _project_out_span(
+                    v_slice,
+                    vt_list,
+                    s=s,
+                    e=e,
+                    eps=proj_eps,
+                    strength=proj_strength,
+                    strength_tokens=proj_strength_tokens,
+                )
                 v_txt = torch.cat([v_txt[:, :s, :], v_slice, v_txt[:, e:, :]], dim=1)
                 value_txt_new = v_txt.view(value.shape[0], text_seq_len, value.shape[2], value.shape[3])
                 value[:, :text_seq_len] = torch.nan_to_num(value_txt_new, nan=0.0, posinf=0.0, neginf=0.0)
@@ -415,7 +466,7 @@ class FluxAttnProcessor:
             # Be robust if None
             target_block_indices = target_block_indices or []
 
-            if (((record_target_vt and (block_index not in _FLUX_TARGET_VT_READY_SET)) or (record_retain_vt and (block_index not in _FLUX_TARGET_VT_READY_SET_RETAIN))) and (block_index in target_block_indices)):
+            if ((record_target_vt or record_retain_vt) and (block_index in target_block_indices)):
                 # vt_dual = encoder_value.detach() #0 idx token
                 # vt_dual = vt_dual[:1].contiguous()
                 # vt_dual = _make_lasttoken_duplicated_vt(vt_dual, last_token_index=-1)
@@ -426,11 +477,15 @@ class FluxAttnProcessor:
                 vt_dual = _make_attn01_duplicated_vt(vt_dual, q_txt, k_txt, attn_mode="col")
                 
                 if record_retain_vt:
-                    #it is assumed that retain is ALWAYS done first, so we can project vt_single to the orthogonal complement of the retain vector. editing here reduces the number of changes.
-                    #TODO: for multiple concepts, create a list of retain vectors and create a projection matrix?? for now we just do a single retain vector for simplicity.
-                    if(block_index not in _FLUX_TARGET_VT_BANK_RETAIN):
-                        _FLUX_TARGET_VT_BANK_RETAIN[block_index] = []
-                    _FLUX_TARGET_VT_BANK_RETAIN[block_index].append(vt_dual)
+                    _with_dedup_thr(
+                        dedup_thr,
+                        lambda: _append_vt_capped(
+                            _FLUX_TARGET_VT_BANK_RETAIN,
+                            block_index,
+                            vt_dual,
+                            max_keep=max_ret,
+                        ),
+                    )
                     _FLUX_TARGET_VT_READY_SET_RETAIN.add(block_index)
                 elif record_target_vt:
                     retain_signal = _FLUX_TARGET_VT_BANK_RETAIN.get(block_index, None)
@@ -442,83 +497,40 @@ class FluxAttnProcessor:
                     vt_dual_all_head = vt_dual.reshape(vt_dual.shape[0], vt_dual.shape[1], -1) # 1 x 512 x 3072
                     vt_dual_all_head = vt_dual_all_head @ (torch.eye(vt_dual_all_head.shape[-1], device=vt_dual_all_head.device, dtype=vt_dual_all_head.dtype) - retain_proj) # project to orthogonal complement of retain space
                     vt_dual = vt_dual_all_head.reshape(vt_dual.shape)
-                    _FLUX_TARGET_VT_BANK[block_index] = vt_dual
+                    _with_dedup_thr(
+                        dedup_thr,
+                        lambda: _append_vt_capped(_FLUX_TARGET_VT_BANK, block_index, vt_dual, max_keep=max_tgt),
+                    )
                     _FLUX_TARGET_VT_READY_SET.add(block_index)
 
             do_apply_here = (
                 apply_target_proj
                 and (block_index is not None)
                 and (block_index in target_block_indices)
-                and (proj_token_end is not None)
             )
 
             if do_apply_here:
-                vt_source = None
-                if block_index in _FLUX_TARGET_VT_BANK:
-                    vt_source = _FLUX_TARGET_VT_BANK[block_index]
-                elif _FLUX_TARGET_VT_READY and (block_index == target_block_index) and (_FLUX_TARGET_VT is not None):
-                    vt_source = _FLUX_TARGET_VT
-                else:
-                    vt_source = None
-
-                if vt_source is not None:
-                    vt = vt_source
-                    if vt.device != encoder_value.device or vt.dtype != encoder_value.dtype:
-                        vt = vt.to(device=encoder_value.device, dtype=encoder_value.dtype)
-
+                vt_list = _FLUX_TARGET_VT_BANK.get(block_index, [])
+                vt_list = [vt.to(device=encoder_value.device, dtype=encoder_value.dtype) for vt in vt_list]
+                if len(vt_list) > 0:
                     v = encoder_value.reshape(encoder_value.shape[0], encoder_value.shape[1], -1)
-                    vt_flat = vt.reshape(1, vt.shape[1], -1)
-
                     s = 0
-                    e = int(proj_token_end)
+                    e_req = proj_token_end
+                    e = v.shape[1] if (e_req is None) else int(e_req)
                     e = max(s, min(e, v.shape[1]))  # clamp safely
-
-                    v_slice = v[:, s:e, :]
-                    vt_slice = vt_flat[:, s:e, :]
-
-                    vt_norm2 = (vt_slice * vt_slice).sum(-1, keepdim=True)
-                    denom = vt_norm2.clamp_min(proj_eps)
-                    alpha = (v_slice * vt_slice).sum(-1, keepdim=True) / denom
-
-                    if proj_strength_tokens is None:
-                         # v_prompt = vprompt - constant *(v_erase - constant*v_retain)
-                         # v_prompt = v_prompt - v_erase + v_retain 
-                        v_slice = v_slice - (proj_strength * alpha * vt_slice)
-                        _flux_debug_print_strength(
-                            block_index=block_index,
-                            is_dual=True,
-                            s=s,
-                            e=e,
-                            proj_strength=proj_strength,
-                            proj_strength_tokens=None,
-                            strength_tau=strength_tau,
-                            strength_gamma=strength_gamma,
-                            g_slice=None,
-                            alpha=alpha,
-                        )
-                    else:
-                        g_all = proj_strength_tokens
-                        if g_all.ndim == 2:
-                            g_all = g_all[0]
-                        g_slice = g_all[s:e].to(device=v_slice.device, dtype=v_slice.dtype).view(1, e - s, 1)
-                        v_slice = v_slice - ((g_slice * alpha) * vt_slice)
-                        _flux_debug_print_strength(
-                            block_index=block_index,
-                            is_dual=True,
-                            s=s,
-                            e=e,
-                            proj_strength=proj_strength,
-                            proj_strength_tokens=proj_strength_tokens,
-                            strength_tau=strength_tau,
-                            strength_gamma=strength_gamma,
-                            g_slice=g_slice.view(-1),
-                            alpha=alpha,
-                        )
-
+                    v_slice = v[:, s:e, :]  # [B,T,D]
+                    v_slice = _project_out_span(
+                        v_slice,
+                        vt_list,
+                        s=s,
+                        e=e,
+                        eps=proj_eps,
+                        strength=proj_strength,
+                        strength_tokens=proj_strength_tokens,
+                    )
                     v = torch.cat([v[:, :s, :], v_slice, v[:, e:, :]], dim=1)
                     encoder_value = v.view_as(encoder_value)
                     encoder_value = torch.nan_to_num(encoder_value, nan=0.0, posinf=0.0, neginf=0.0)
-
             if dual_zero_text_value:
                 encoder_value = encoder_value * 0.0
 
