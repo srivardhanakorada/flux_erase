@@ -27,7 +27,6 @@ from ..pipeline_utils import DiffusionPipeline
 from .pipeline_output import FluxPipelineOutput
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
-
 EXAMPLE_DOC_STRING = """
     Examples:
         ```py
@@ -469,23 +468,15 @@ class FluxPipeline(
             callback_on_step_end_tensor_inputs=callback_on_step_end_tensor_inputs,
             max_sequence_length=max_sequence_length,
         )
-
         self._guidance_scale = guidance_scale
-
-        ### CHANGED (copy + default dict)
         self._joint_attention_kwargs = (joint_attention_kwargs or {}).copy()
-
         self._current_timestep = None
         self._interrupt = False
-
         if prompt is not None and isinstance(prompt, str): batch_size = 1
         elif prompt is not None and isinstance(prompt, list): batch_size = len(prompt)
         else: batch_size = prompt_embeds.shape[0]
-
         device = self._execution_device
-
         lora_scale = (self.joint_attention_kwargs.get("scale", None) if self.joint_attention_kwargs is not None else None)
-
         prompt_embeds, pooled_prompt_embeds, text_ids = self.encode_prompt(
             prompt=prompt,
             prompt_2=prompt_2,
@@ -497,16 +488,9 @@ class FluxPipeline(
             lora_scale=lora_scale,
             disable_clip=disable_clip,
         )
-
-        # ------------------------------------------------------------------
-        # CHANGED: compute proj_token_end from first EOS in CLIP ids (NOT T5)
-        # ------------------------------------------------------------------
-        # Use the actual CLIP prompt text (if disable_clip=True, CLIP text is blank,
-        # so fall back to the original prompt text for gating).
         clip_prompt = prompt
         if disable_clip:
             clip_prompt = prompt_2 if (prompt_2 is not None) else prompt
-
         clip_prompt_list = [clip_prompt] if isinstance(clip_prompt, str) else list(clip_prompt)
         clip_ids = self.tokenizer(
             clip_prompt_list,
@@ -515,38 +499,26 @@ class FluxPipeline(
             truncation=True,
             return_tensors="pt",
         ).input_ids
-
         eos_id = self.tokenizer.eos_token_id
         Lc = clip_ids.shape[1]
         idxs = torch.arange(Lc).unsqueeze(0).expand_as(clip_ids)
         first_eos = torch.where(clip_ids == eos_id, idxs, torch.full_like(idxs, Lc)).min(dim=1).values
-        # end = first eos index (exclude eos). keep at least 1 token.
         clip_end = int(first_eos.clamp(min=1, max=Lc).min().item())
-
-        # Clamp to T5 prompt_embeds length to be safe
         T5L = int(prompt_embeds.shape[1])
         proj_end = int(max(1, min(clip_end, T5L)))
-
         self._joint_attention_kwargs["proj_token_end"] = proj_end
-        # ------------------------------------------------------------------
-
-        ### ADDED (concept embedding store on record pass; mean over [0:proj_end))
         try:
             from diffusers.models.transformers.transformer_flux import flux_add_concept_embed
             if bool(self._joint_attention_kwargs.get("record_target_vt", False)) and (not bool(self._joint_attention_kwargs.get("apply_target_proj", False))):
                 s0 = 0
                 e0 = proj_end
-                E0 = prompt_embeds[:, s0:e0, :]      # [B,T,D]
-                c = E0.mean(dim=1, keepdim=False)[:1]  # [1,D]
+                E0 = prompt_embeds[:, s0:e0, :]      
+                c = E0.mean(dim=1, keepdim=False)[:1]  
                 c = c / (c.norm(dim=-1, keepdim=True) + 1e-8)
-                flux_add_concept_embed(c)  # <-- APPEND, don't overwrite
-        except Exception:
-            pass
-
-        ### ADDED (adaptive per-token proj strengths on apply pass)
+                flux_add_concept_embed(c) 
+        except Exception: pass
         try:
             from diffusers.models.transformers.transformer_flux import flux_get_concept_embeds
-
             if bool(self._joint_attention_kwargs.get("apply_target_proj", False)):
                 C_list = flux_get_concept_embeds()  # list of [1,D]
                 if C_list is not None and len(C_list) > 0:
@@ -554,36 +526,18 @@ class FluxPipeline(
                     gamma = float(self._joint_attention_kwargs.get("strength_gamma", 2.0))
                     smax  = float(self._joint_attention_kwargs.get("proj_strength", 1.0))
                     T     = int(self._joint_attention_kwargs.get("proj_token_end", proj_end))
-
                     E = prompt_embeds[:, :T, :]                         # [B,T,D]
                     E_n = E / (E.norm(dim=-1, keepdim=True) + 1e-8)     # [B,T,D]
-
-                    # Stack concepts: [K,D]
                     C = torch.cat([c for c in C_list], dim=0).to(device=E_n.device, dtype=E_n.dtype)  # [K,D]
-
-                    # r[b,t,k] = cos(E_n[b,t], C[k])
                     r = torch.einsum("btd,kd->btk", E_n, C)  # [B,T,K]
-
-                    # Aggregate across concepts: max match to ANY target
                     r_any = r.max(dim=-1).values  # [B,T]
-
-                    # Map to strength
                     g = ((r_any - tau) / (1.0 - tau)).clamp(0.0, 1.0) ** gamma
                     g = (smax * g).to(device=prompt_embeds.device, dtype=prompt_embeds.dtype)
-
-                    # Optional: keep token0 off
-                    # if g.shape[1] > 0:
-                    #     g[:, 0] = 0.0
-
-                    # Store as [L] or [B,L]; your transformer expects [L] or [1,L]
                     Lfull = prompt_embeds.shape[1]
                     gst = torch.zeros((g.shape[0], Lfull), device=prompt_embeds.device, dtype=prompt_embeds.dtype)
                     gst[:, :T] = g
-                    # If you always run batch=1, you can store gst[0]; but keeping [B,L] is fine too.
                     self._joint_attention_kwargs["proj_strength_tokens"] = gst[0]
-        except Exception:
-            pass
-
+        except Exception: pass
         num_channels_latents = self.transformer.config.in_channels // 4
         latents, latent_image_ids = self.prepare_latents(
             batch_size * num_images_per_prompt,
@@ -595,7 +549,6 @@ class FluxPipeline(
             generator,
             latents,
         )
-
         sigmas = np.linspace(1.0, 1 / num_inference_steps, num_inference_steps) if sigmas is None else sigmas
         if hasattr(self.scheduler.config, "use_flow_sigmas") and self.scheduler.config.use_flow_sigmas: sigmas = None
         image_seq_len = latents.shape[1]
@@ -618,11 +571,8 @@ class FluxPipeline(
         if self.transformer.config.guidance_embeds:
             guidance = torch.full([1], guidance_scale, device=device, dtype=torch.float32)
             guidance = guidance.expand(latents.shape[0])
-        else:
-            guidance = None
-
+        else: guidance = None
         image_embeds = None
-
         self.scheduler.set_begin_index(0)
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
@@ -653,10 +603,8 @@ class FluxPipeline(
                     latents = callback_outputs.pop("latents", latents)
                     prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0): progress_bar.update()
-
         self._current_timestep = None
-        if output_type == "latent":
-            image = latents
+        if output_type == "latent": image = latents
         else:
             latents = self._unpack_latents(latents, height, width, self.vae_scale_factor)
             latents = (latents / self.vae.config.scaling_factor) + self.vae.config.shift_factor
