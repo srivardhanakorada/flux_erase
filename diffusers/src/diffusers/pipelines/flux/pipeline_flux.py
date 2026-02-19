@@ -251,7 +251,7 @@ class FluxPipeline(
                 max_sequence_length=max_sequence_length,
                 device=device,
             )
-            # print(f"CLIP Prompt : {prompt}, T5 Prompt : {prompt_2}")
+            print(f"CLIP Prompt : {prompt}, T5 Prompt : {prompt_2}")
         if self.text_encoder is not None:
             if isinstance(self, FluxLoraLoaderMixin) and USE_PEFT_BACKEND: unscale_lora_layers(self.text_encoder, lora_scale)
         if self.text_encoder_2 is not None:

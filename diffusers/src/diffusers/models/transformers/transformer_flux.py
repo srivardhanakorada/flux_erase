@@ -143,38 +143,72 @@ def _project_out_span(
         v32 = v32 - (g * removed)
     return v32.to(dtype=v_slice.dtype)
 
-def _make_attn01_duplicated_vt(
+def _make_attn_span_duplicated_vt(
     vt: torch.Tensor,
     q: torch.Tensor,
     k: torch.Tensor,
     *,
+    span_end: int = 2,              # NEW: use tokens [0:span_end]
     fill_from: int = 1,
     zero_sot: bool = True,
-    attn_mode: str = "col",          
+    attn_mode: str = "col",         # "col" recommended
     normalize_detector: bool = True,
     eps: float = 1e-8,
 ) -> torch.Tensor:
+    """
+    Attention-weighted detector built from phrase tokens [0:span_end],
+    then duplicated across [fill_from:].
+
+    vt, q, k: [1, L, H, Dh] in head space (after unflatten + RMSNorm for q/k)
+    """
     assert vt.ndim == 4 and vt.shape[0] == 1, f"Expected vt [1,L,H,Dh], got {tuple(vt.shape)}"
     assert q.shape == vt.shape and k.shape == vt.shape, f"q/k must match vt shape. got q={tuple(q.shape)}, k={tuple(k.shape)}, vt={tuple(vt.shape)}"
+
     L, H, Dh = vt.shape[1], vt.shape[2], vt.shape[3]
-    if L < 2: raise ValueError(f"Need at least 2 tokens to use phrase tokens [0,1]. Got L={L}")
-    qh = q.permute(0, 2, 1, 3)
-    kh = k.permute(0, 2, 1, 3)
-    logits = torch.matmul(qh, kh.transpose(-1, -2)) / (Dh ** 0.5)
-    A = F.softmax(logits, dim=-1)
-    if attn_mode == "col": imp = A.mean(dim=-2)
-    elif attn_mode == "row": imp = A.mean(dim=-1)
-    else: raise ValueError("attn_mode must be 'col' or 'row'")
-    imp01 = imp[:, :, 0:2]
-    w = imp01 / imp01.sum(dim=-1, keepdim=True).clamp_min(eps)
-    vt01 = vt[:, 0:2, :, :].permute(0, 2, 1, 3)
-    d = (w.unsqueeze(-1) * vt01).sum(dim=-2, keepdim=True)
-    if normalize_detector: d = d / torch.linalg.norm(d, dim=-1, keepdim=True).clamp_min(eps)
+    # Clamp span_end safely
+    span_end = int(span_end)
+    span_end = max(1, min(span_end, L))
+    if span_end < 1:
+        raise ValueError(f"span_end must be >=1. Got span_end={span_end}")
+
+    # Build attention A from q,k: [1,L,H,Dh] -> [1,H,L,Dh]
+    qh = q.permute(0, 2, 1, 3)  # [1,H,L,Dh]
+    kh = k.permute(0, 2, 1, 3)  # [1,H,L,Dh]
+    logits = torch.matmul(qh, kh.transpose(-1, -2)) / (Dh ** 0.5)  # [1,H,L,L]
+    A = F.softmax(logits, dim=-1)  # query->key
+
+    # Token importance per head: [1,H,L]
+    if attn_mode == "col":
+        imp = A.mean(dim=-2)  # how much all queries attend TO key token t
+    elif attn_mode == "row":
+        imp = A.mean(dim=-1)  # how each query token attends over keys
+    else:
+        raise ValueError("attn_mode must be 'col' or 'row'")
+
+    # Restrict to phrase tokens [0:span_end]
+    imp_span = imp[:, :, 0:span_end]  # [1,H,span_end]
+    w = imp_span / imp_span.sum(dim=-1, keepdim=True).clamp_min(eps)  # [1,H,span_end]
+
+    # Values for tokens [0:span_end]: vt_span [1,span_end,H,Dh] -> [1,H,span_end,Dh]
+    vt_span = vt[:, 0:span_end, :, :].permute(0, 2, 1, 3)  # [1,H,span_end,Dh]
+
+    # Weighted sum -> detector d: [1,H,1,Dh]
+    d = (w.unsqueeze(-1) * vt_span).sum(dim=-2, keepdim=True)  # [1,H,1,Dh]
+    if normalize_detector:
+        d = d / torch.linalg.norm(d, dim=-1, keepdim=True).clamp_min(eps)
+
+    # Back to token axis: [1,1,H,Dh]
     d = d.permute(0, 2, 1, 3)
+
+    # Duplicate
     vt2 = vt.clone()
-    if L > fill_from: vt2[:, fill_from:, :, :] = d.expand(1, L - fill_from, H, Dh)
-    if zero_sot: vt2[:, 0, :, :] = 0.0
-    return vt2 
+    if L > fill_from:
+        vt2[:, fill_from:, :, :] = d.expand(1, L - fill_from, H, Dh)
+
+    if zero_sot:
+        vt2[:, 0, :, :] = 0.0
+
+    return vt2
 
 def projection_retain(v_list: Optional[list[torch.Tensor]], top_k=3):
     if (v_list is None) or (len(v_list) == 0): return None
@@ -246,6 +280,7 @@ class FluxAttnProcessor:
         vt_dedup_cos_thr: Optional[float] = None,
         max_target_vt_per_block: Optional[int] = None,
         max_retain_vt_per_block: Optional[int] = None,
+        vt_phrase_end: int = 2,  # NEW
     ) -> torch.Tensor:
         query, key, value, encoder_query, encoder_key, encoder_value = _get_qkv_projections(attn, hidden_states, encoder_hidden_states)
         query = query.unflatten(-1, (attn.heads, -1))
@@ -265,7 +300,7 @@ class FluxAttnProcessor:
                 vt_single = value[:, :text_seq_len].detach()[:1].contiguous()
                 q_txt     = query[:, :text_seq_len].detach()[:1].contiguous()
                 k_txt     = key[:, :text_seq_len].detach()[:1].contiguous()
-                vt_single = _make_attn01_duplicated_vt(vt_single, q_txt, k_txt, attn_mode="col")
+                vt_single = _make_attn_span_duplicated_vt(vt_single, q_txt, k_txt, attn_mode="col",span_end=vt_phrase_end,)
                 if(record_target_vt): 
                     retain_signal = _FLUX_SINGLE_VT_BANK_RETAIN.get(block_index, None)
                     retain_proj = projection_retain(retain_signal)
@@ -306,7 +341,7 @@ class FluxAttnProcessor:
                 vt_dual = encoder_value.detach()[:1].contiguous()
                 q_txt   = encoder_query.detach()[:1].contiguous()
                 k_txt   = encoder_key.detach()[:1].contiguous()
-                vt_dual = _make_attn01_duplicated_vt(vt_dual, q_txt, k_txt, attn_mode="col")
+                vt_dual = _make_attn_span_duplicated_vt(vt_dual, q_txt, k_txt, attn_mode="col",span_end=vt_phrase_end,)
                 if record_retain_vt:
                     _with_dedup_thr(dedup_thr,lambda: _append_vt_capped(_FLUX_TARGET_VT_BANK_RETAIN,block_index,vt_dual,max_keep=max_ret,),)
                     _FLUX_TARGET_VT_READY_SET_RETAIN.add(block_index)
