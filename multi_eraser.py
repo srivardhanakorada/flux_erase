@@ -6,10 +6,14 @@ from PIL import Image  # type: ignore
 from diffusers import FluxPipeline  # type: ignore
 
 MODEL_ID = "black-forest-labs/FLUX.1-schnell"
+# TARGETS_AND_RETAINS = {
+#     "Donald Trump": ["Melania Trump", "Barack Obama", "Hillary Clinton"],
+#     "Christiano Ronaldo": ["Lionel Messi", "Zlatan Ibrahimović", "Sergio Ramos"],
+#     "Michael Jackson": ["Taylor Swift", "Ed Sheeran", "Justin Bieber"],
+# }
 TARGETS_AND_RETAINS = {
     "Donald Trump": ["Melania Trump", "Barack Obama", "Hillary Clinton"],
-    "Christiano Ronaldo": ["Lionel Messi", "Zlatan Ibrahimović", "Sergio Ramos"],
-    "Michael Jackson": ["Taylor Swift", "Ed Sheeran", "Justin Bieber"],
+    "Dog": ['cat']
 }
 TARGETS = list(TARGETS_AND_RETAINS.keys())
 RETAINS_COMBINED = sorted({r for rs in TARGETS_AND_RETAINS.values() for r in rs})
@@ -28,7 +32,7 @@ VT_DEDUP_COS_THR = 0.98
 MAX_TARGET_VT_PER_BLOCK = 8
 MAX_RETAIN_VT_PER_BLOCK = 16
 STRENGTH_TAU = 0.0
-STRENGTH_GAMMA = 3.0
+STRENGTH_GAMMA = 2.0
 SAVE_RECORD_IMAGES = False
 
 def prompt_for_person(name: str) -> str: return f"a photo of {name}"
