@@ -13,11 +13,13 @@ MODEL_ID = "black-forest-labs/FLUX.1-schnell"
 # }
 TARGETS_AND_RETAINS = {
     "Donald Trump": ["Melania Trump", "Barack Obama", "Hillary Clinton"],
-    "Dog": ['cat']
+    "Michael Jackson": ['Ed Sheeran','Taylor Swift','Justin Bieber'],
+    "Christiano Ronaldo": ["Lionel Messi", "Zlatan Ibrahimović", "Sergio Ramos"]
 }
+
 TARGETS = list(TARGETS_AND_RETAINS.keys())
 RETAINS_COMBINED = sorted({r for rs in TARGETS_AND_RETAINS.values() for r in rs})
-OUTDIR = "multi_concept_eraser_out_four"
+OUTDIR = "multi_concept_with_anchoring_2_man_gamma_3"
 os.makedirs(OUTDIR, exist_ok=True)
 N_SAMPLES = 5
 BASE_SEED = 0
@@ -27,12 +29,13 @@ H, W = 768, 768
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
 PROJ_STRENGTH = 6.0
+ANCHOR = "man"
 PROJ_EPS = 1e-8
 VT_DEDUP_COS_THR = 0.98
 MAX_TARGET_VT_PER_BLOCK = 8
 MAX_RETAIN_VT_PER_BLOCK = 16
 STRENGTH_TAU = 0.0
-STRENGTH_GAMMA = 2.0
+STRENGTH_GAMMA = 3.0
 SAVE_RECORD_IMAGES = False
 
 def prompt_for_person(name: str) -> str: return f"a photo of {name}"
@@ -97,7 +100,20 @@ def main():
     pipe.set_progress_bar_config(disable=False)
     from diffusers.models.transformers.transformer_flux import flux_reset_vt_banks #type:ignore
     flux_reset_vt_banks(reset_retain=True)
-    print(f"[1/3] Recording retain VT banks for {len(RETAINS_COMBINED)} retain concepts...")
+    print(f"[1/4] Recording anchor VT banks for anchor concept {ANCHOR}")
+    ja = ja_kwargs_common()
+    ja.update(
+        record_anchor_vt = True,
+        record_target_vt = False,
+        record_retain_vt = False,
+        apply_target_proj = False,
+    )
+    p = ANCHOR
+    seed = BASE_SEED + 1000
+    img = run_one(pipe,p,ja=ja, seed = seed)
+    if(SAVE_RECORD_IMAGES):
+        save_img(img, os.path.join(OUTDIR, "record_anchor", f"{i:02d}_{ANCHOR}.png"))
+    print(f"[2/4] Recording retain VT banks for {len(RETAINS_COMBINED)} retain concepts...")
     for i, retain in enumerate(RETAINS_COMBINED):
         ja = ja_kwargs_common()
         ja.update(
@@ -110,7 +126,7 @@ def main():
         img = run_one(pipe, p, ja=ja, seed=seed)
         if SAVE_RECORD_IMAGES:
             save_img(img, os.path.join(OUTDIR, "record_retain", f"{i:02d}_{retain}.png"))
-    print(f"[2/3] Recording target VT banks for {len(TARGETS)} targets...")
+    print(f"[3/4] Recording target VT banks for {len(TARGETS)} targets...")
     for i, target in enumerate(TARGETS):
         ja = ja_kwargs_common()
         ja.update(
@@ -123,7 +139,7 @@ def main():
         img = run_one(pipe, p, ja=ja, seed=seed)
         if SAVE_RECORD_IMAGES:
             save_img(img, os.path.join(OUTDIR, "record_target", f"{i:02d}_{target}.png"))
-    print("[3/3] Applying multi-concept eraser and sampling images...")
+    print("[4/4] Applying multi-concept eraser and sampling images...")
     PROBES = [("target", t) for t in TARGETS] + [("retain", r) for r in RETAINS_COMBINED]
     for kind, concept in PROBES:
         p = prompt_for_person(concept)
