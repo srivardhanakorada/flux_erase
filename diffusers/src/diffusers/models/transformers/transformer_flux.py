@@ -25,11 +25,11 @@ from ..normalization import AdaLayerNormContinuous, AdaLayerNormZero, AdaLayerNo
 _FLUX_TARGET_VT = None
 _FLUX_TARGET_VT_READY = False
 _FLUX_TARGET_VT_BANK: Dict[int, List[torch.Tensor]] = {}
-_FLUX_SINGLE_VT_BANK: Dict[int, List[torch.Tensor]] = {}
+_FLUX_SINGLE_VT_BANK: Dict[int, List[List[torch.Tensor]]] = {}
 _FLUX_TARGET_VT_READY_SET = set()
 _FLUX_SINGLE_VT_READY_SET = set()
 _FLUX_PRINT_STRENGTH_COUNT = 0
-_FLUX_SINGLE_VT_BANK_RETAIN: Dict[int, List[torch.Tensor]] = {}
+_FLUX_SINGLE_VT_BANK_RETAIN: Dict[int, List[List[torch.Tensor]]] = {}
 _FLUX_SINGLE_VT_READY_SET_RETAIN = set()
 _FLUX_TARGET_VT_BANK_RETAIN: Dict[int, List[torch.Tensor]] = {}
 _FLUX_TARGET_VT_READY_SET_RETAIN = set()
@@ -87,28 +87,36 @@ def flux_reset_vt_banks(reset_retain: bool = True):
     flux_reset_concept_embeds()
 
 def _append_vt_capped(
-    bank: Dict[int, List[torch.Tensor]],
+    bank: Dict[int, List[List[torch.Tensor]]],
     block_index: int,
     vt_new: torch.Tensor,
+    pooled_projections: Optional[torch.Tensor] = None,
     *,
     max_keep: int = _MAX_VT_PER_BLOCK,
 ):
     if block_index not in bank: bank[block_index] = []
     lst = bank[block_index]
     if len(lst) == 0:
-        lst.append(vt_new.detach())
+        if(pooled_projections is None):
+            lst.append([vt_new.detach()])
+        else:
+            lst.append([pooled_projections,vt_new.detach()])
         return
     with torch.no_grad():
         x = vt_new.reshape(-1).to(torch.float32)
         x = x / (x.norm() + 1e-8)
         best = -1.0
         for vt_old in lst:
-            y = vt_old.reshape(-1).to(torch.float32)
+            val_vec = vt_old[1] if pooled_projections is not None else vt_old[0]
+            y = val_vec.reshape(-1).to(torch.float32)
             y = y / (y.norm() + 1e-8)
             sim = float((x * y).sum().item())
             if sim > best: best = sim
         if best >= _VT_DEDUP_COS_THR: return
-    lst.append(vt_new.detach())
+    if(pooled_projections is None):
+        lst.append([vt_new.detach()])
+    else:
+        lst.append([pooled_projections,vt_new.detach()])
     if max_keep is not None and max_keep > 0 and len(lst) > max_keep: del lst[0 : (len(lst) - max_keep)]
 
 def _with_dedup_thr(thr: float, fn):
@@ -118,6 +126,91 @@ def _with_dedup_thr(thr: float, fn):
     try: return fn()
     finally: _VT_DEDUP_COS_THR = old
 
+def norm_clip(vec):
+    return vec/(vec.norm(dim=-1,keepdim=True)+1e-8)
+
+def _project_out_span_clip(
+    v_slice: torch.Tensor,          
+    vt_list: List[torch.Tensor],    
+    *,
+    s: int,
+    e: int,
+    eps: float,
+    strength: float,
+    strength_tokens: Optional[torch.Tensor] = None, 
+    anchor_vector: Optional[torch.Tensor] = None,
+    anchor_strength: Optional[float] = 2.0,
+    clip_embedding: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    #calculate beta using CLIP embeddings instead of t5, then edit the value vectors (defined by t5) using that beta.
+    # print("Clip embedding: ",clip_embedding) #comes out same everytime
+    if len(vt_list) == 0: return v_slice
+    B, T, D = v_slice.shape # 1 x tokens_selected x 3072
+    K = len(vt_list) #number of concept vectors that are significantly different (may not be equal to erased concepts)
+    e = s + T
+    V_tok = []
+    vt_mat = None
+    vt_mat_clip = None
+    for vt in vt_list:
+        # vt[0] has clip embeddings, while vt[1] has the t5 value vector
+        vt_flat = vt[1].reshape(1, vt[1].shape[1], -1) # 1 x 512 x 3072
+        if(vt_mat is None):
+            vt_mat = vt_flat
+        else:
+            vt_mat = torch.cat([vt_mat, vt_flat], dim=0) # 
+        if(vt_mat_clip is None):
+            vt_mat_clip = norm_clip(vt[0])
+        else: 
+            vt_mat_clip = torch.cat([vt_mat_clip,norm_clip(vt[0])],dim=0)
+        V_tok.append(vt_flat[0, s:e, :])  # tokens_selected x 3072        
+    V_tok = torch.stack(V_tok, dim=1) #  tokens_selected x number of concept vectors that are significantly different x 3072          
+    # print("V_tok shape: ",V_tok.shape) 
+    # V32 = V_tok.to(torch.float32) # num of concepts x tokens_selected x 3072
+    V32_clip = vt_mat_clip.to(device=v_slice.device, dtype=torch.float32).unsqueeze(0) # 1 x num of concepts x 768
+    # print("V32_clip shape",V32_clip.shape)
+    v32 = v_slice.to(torch.float32) #1 x tokens_selected x 3072
+    # print("v32 shape",v32.shape)
+    v32_clip = norm_clip(clip_embedding.to(device=v_slice.device, dtype=torch.float32)).unsqueeze(1) # 1 x 1 x 768
+    # print("v32_clip shape",v32_clip.shape)
+    # print("v_slice shape: ",v_slice.shape)# 1 x tokens_selected x 3072
+    # print(G) #non invertible for clip in case of single concept erasure. 
+    # print("G shape: ",G.shape)
+
+    #G is non invertible for single concepts since all embeddings would be the same. 
+    # G = torch.einsum("tkd,tld->tkl", V32_clip, V32_clip)
+    # I = torch.eye(K, device=G.device, dtype=G.dtype).view(1, K, K)
+    # G = G + eps * I
+    # rhs = torch.einsum("tkd,btd->btk", V32_clip, v32_clip) # 1x4x768, 1x1x768
+    # beta = torch.linalg.solve(G.unsqueeze(0).expand(B, -1, -1, -1), rhs.unsqueeze(-1)).squeeze(-1)
+
+    beta = 75*torch.einsum("tkd,btd->btk", V32_clip, v32_clip) # 1x4x768, 1x1x768
+    
+
+    # print("beta shape: ",beta.shape)
+    # temp1 = V32_clip.squeeze(0)
+    # print((V32_clip.squeeze(0)@v32_clip.squeeze(0).T)[0][0])
+    # removed = torch.einsum("tkd,btk->btd", V32, beta)
+    # print("vt_mat shape: ",vt_mat.shape)
+    vt_mat = projection_anchor(vt_mat,anchor_vector,anchor_strength = anchor_strength).to(torch.float32)
+    # print("vt_mat shape: ",vt_mat.shape)
+    V32_anchored = vt_mat.transpose(0,1) # 512 x erased_concepts x 3072
+    beta_expanded = beta.expand(B,V32_anchored.shape[0], K)  # (1,512,K)
+    # print("V32_anchored shape:",V32_anchored.shape)
+    # print("V32_anchored shape:",V32_anchored.shape)
+    # print("Beta expanded: ",beta_expanded.shape)
+    # beta = torch.clamp(beta, min=0)
+    
+    removed = torch.einsum("tkd,btk->btd", V32_anchored, beta_expanded)
+    removed = removed[:,s:e,:]
+    # print("removed shape: ",removed.shape)
+    if strength_tokens is None: v32 = v32 - float(strength) * removed
+    else:
+        g_all = strength_tokens
+        if g_all.ndim == 2: g_all = g_all[0]
+        g = g_all[s:e].to(device=v_slice.device, dtype=torch.float32).view(1, T, 1)
+        v32 = v32 - (g * removed)
+    return v32.to(dtype=v_slice.dtype)
+    
 def _project_out_span(
     v_slice: torch.Tensor,          
     vt_list: List[torch.Tensor],    
@@ -138,7 +231,7 @@ def _project_out_span(
     V_tok = []
     vt_mat = None
     for vt in vt_list:
-        vt_flat = vt.reshape(1, vt.shape[1], -1) # 1 x 512 x 3072
+        vt_flat = vt[1].reshape(1, vt[1].shape[1], -1) # 1 x 512 x 3072
         if(vt_mat is None):
             vt_mat = vt_flat
         else:
@@ -164,7 +257,6 @@ def _project_out_span(
     # print("V32_anchored shape:",V32_anchored.shape)
     removed = torch.einsum("tkd,btk->btd", V32_anchored, beta)
     # print("removed shape: ",removed.shape)
-    # assert(1==2)
     if strength_tokens is None: v32 = v32 - float(strength) * removed
     else:
         g_all = strength_tokens
@@ -289,6 +381,7 @@ class FluxAttnProcessor:
         vt_dedup_cos_thr: Optional[float] = None,
         max_target_vt_per_block: Optional[int] = None,
         max_retain_vt_per_block: Optional[int] = None,
+        pooled_projections: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         query, key, value, encoder_query, encoder_key, encoder_value = _get_qkv_projections(attn, hidden_states, encoder_hidden_states)
         query = query.unflatten(-1, (attn.heads, -1))
@@ -296,6 +389,7 @@ class FluxAttnProcessor:
         value = value.unflatten(-1, (attn.heads, -1))
         query = attn.norm_q(query)
         key = attn.norm_k(key)
+        # print(pooled_projections.shape) # 1 x 768
         dedup_thr = float(_VT_DEDUP_COS_THR) if vt_dedup_cos_thr is None else float(vt_dedup_cos_thr)
         max_tgt  = int(_FLUX_MAX_TARGET_VT_PER_BLOCK) if max_target_vt_per_block is None else int(max_target_vt_per_block)
         max_ret  = int(_FLUX_MAX_RETAIN_VT_PER_BLOCK) if max_retain_vt_per_block is None else int(max_retain_vt_per_block)
@@ -311,13 +405,16 @@ class FluxAttnProcessor:
                 vt_single = _make_attn01_duplicated_vt(vt_single, q_txt, k_txt, attn_mode="col")
                 if(record_target_vt): 
                     retain_signal = _FLUX_SINGLE_VT_BANK_RETAIN.get(block_index, None)
-                    retain_proj = projection_retain(retain_signal)
+                    unwrapped_retain_signal = []
+                    for rs in retain_signal:
+                        unwrapped_retain_signal.append(rs[0])
+                    retain_proj = projection_retain(unwrapped_retain_signal)
                     assert(retain_proj is not None)
                     retain_proj = retain_proj.to(device=vt_single.device, dtype=vt_single.dtype)
                     vt_all_head = vt_single.reshape(vt_single.shape[0], vt_single.shape[1], -1)
                     vt_all_head = vt_all_head @ (torch.eye(vt_all_head.shape[-1], device=vt_all_head.device, dtype=vt_all_head.dtype) - retain_proj) # project to orthogonal complement of retain space
                     vt_single = vt_all_head.reshape(vt_single.shape)
-                    _with_dedup_thr(dedup_thr,lambda: _append_vt_capped(_FLUX_SINGLE_VT_BANK, block_index, vt_single, max_keep=max_tgt),) # dedup doesnt work?? almost adding for all timesteps
+                    _with_dedup_thr(dedup_thr,lambda: _append_vt_capped(_FLUX_SINGLE_VT_BANK, block_index, vt_single, max_keep=max_tgt,pooled_projections=pooled_projections),) # dedup doesnt work?? almost adding for all timesteps
                     #need a more "global perspective" on the concept. for that, CLIP?? determine coeff using CLIP and apply them on Value tokens??
                     #for every rerased concept that is added... store their clip embedding. 
                     #for every prompt, check their clip embedding with the clip embeddings stored for the erased concepts.
@@ -334,14 +431,16 @@ class FluxAttnProcessor:
             if do_apply_single:
                 vt_list = _FLUX_SINGLE_VT_BANK.get(block_index, [])
                 anchor_vector = _FLUX_SINGLE_VT_BANK_ANCHOR.get(block_index,None)
-                vt_list = [vt.to(device=value.device, dtype=value.dtype) for vt in vt_list]
+                vt_list = [[vt[0].to(device=value.device, dtype=value.dtype),vt[1].to(device=value.device, dtype=value.dtype)] for vt in vt_list] #clip emb,t5 value vector
                 v_txt = value[:, :text_seq_len].reshape(value.shape[0], text_seq_len, -1)
                 s = 0
                 e_req = proj_token_end
                 e = text_seq_len if (e_req is None) else int(e_req)
                 e = max(s, min(e, v_txt.shape[1]))
                 v_slice = v_txt[:, s:e, :]
-                v_slice = _project_out_span(v_slice,vt_list,s=s,e=e,eps=proj_eps,strength=proj_strength,strength_tokens=proj_strength_tokens,anchor_vector = anchor_vector,anchor_strength=anchor_strength)
+                # clip based gating needs fix... similarity isnt matching
+                v_slice = _project_out_span_clip(v_slice,vt_list,s=s,e=e,eps=proj_eps,strength=proj_strength,strength_tokens=proj_strength_tokens,anchor_vector = anchor_vector,anchor_strength=anchor_strength,clip_embedding=pooled_projections)
+                # v_slice = _project_out_span(v_slice,vt_list,s=s,e=e,eps=proj_eps,strength=proj_strength,strength_tokens=proj_strength_tokens,anchor_vector = anchor_vector,anchor_strength=anchor_strength) 
                 v_txt = torch.cat([v_txt[:, :s, :], v_slice, v_txt[:, e:, :]], dim=1)
                 value_txt_new = v_txt.view(value.shape[0], text_seq_len, value.shape[2], value.shape[3])
                 value[:, :text_seq_len] = torch.nan_to_num(value_txt_new, nan=0.0, posinf=0.0, neginf=0.0)
@@ -364,13 +463,16 @@ class FluxAttnProcessor:
                     _FLUX_TARGET_VT_READY_SET_RETAIN.add(block_index)
                 elif record_target_vt:
                     retain_signal = _FLUX_TARGET_VT_BANK_RETAIN.get(block_index, None)
-                    retain_proj = projection_retain(retain_signal)
+                    unwrapped_retain_signal = []
+                    for rs in retain_signal:
+                        unwrapped_retain_signal.append(rs[0])
+                    retain_proj = projection_retain(unwrapped_retain_signal)
                     assert(retain_proj is not None)
                     retain_proj = retain_proj.to(device=vt_dual.device, dtype=vt_dual.dtype)
                     vt_dual_all_head = vt_dual.reshape(vt_dual.shape[0], vt_dual.shape[1], -1)
                     vt_dual_all_head = vt_dual_all_head @ (torch.eye(vt_dual_all_head.shape[-1], device=vt_dual_all_head.device, dtype=vt_dual_all_head.dtype) - retain_proj) # project to orthogonal complement of retain space
                     vt_dual = vt_dual_all_head.reshape(vt_dual.shape)
-                    _with_dedup_thr(dedup_thr,lambda: _append_vt_capped(_FLUX_TARGET_VT_BANK, block_index, vt_dual, max_keep=max_tgt),)
+                    _with_dedup_thr(dedup_thr,lambda: _append_vt_capped(_FLUX_TARGET_VT_BANK, block_index, vt_dual, max_keep=max_tgt,pooled_projections=pooled_projections),)
                     _FLUX_TARGET_VT_READY_SET.add(block_index)
                 elif record_anchor_vt and (block_index not in _FLUX_TARGET_VT_READY_SET_ANCHOR):
                     _FLUX_TARGET_VT_BANK_ANCHOR[block_index] = vt_dual
@@ -379,7 +481,7 @@ class FluxAttnProcessor:
             if do_apply_here:
                 vt_list = _FLUX_TARGET_VT_BANK.get(block_index, [])
                 anchor_vector = _FLUX_TARGET_VT_BANK_ANCHOR.get(block_index,None)
-                vt_list = [vt.to(device=encoder_value.device, dtype=encoder_value.dtype) for vt in vt_list]
+                vt_list = [[vt[0].to(device=encoder_value.device, dtype=encoder_value.dtype),vt[1].to(device=encoder_value.device, dtype=encoder_value.dtype)] for vt in vt_list]
                 if len(vt_list) > 0:
                     v = encoder_value.reshape(encoder_value.shape[0], encoder_value.shape[1], -1)
                     s = 0
@@ -387,7 +489,8 @@ class FluxAttnProcessor:
                     e = v.shape[1] if (e_req is None) else int(e_req)
                     e = max(s, min(e, v.shape[1]))
                     v_slice = v[:, s:e, :]
-                    v_slice = _project_out_span(v_slice,vt_list,s=s,e=e,eps=proj_eps,strength=proj_strength,strength_tokens=proj_strength_tokens,anchor_vector = anchor_vector,anchor_strength=anchor_strength)
+                    v_slice = _project_out_span_clip(v_slice,vt_list,s=s,e=e,eps=proj_eps,strength=proj_strength,strength_tokens=proj_strength_tokens,anchor_vector = anchor_vector,anchor_strength=anchor_strength,clip_embedding=pooled_projections)
+                    # v_slice = _project_out_span(v_slice,vt_list,s=s,e=e,eps=proj_eps,strength=proj_strength,strength_tokens=proj_strength_tokens,anchor_vector = anchor_vector,anchor_strength=anchor_strength)
                     v = torch.cat([v[:, :s, :], v_slice, v[:, e:, :]], dim=1)
                     encoder_value = v.view_as(encoder_value)
                     encoder_value = torch.nan_to_num(encoder_value, nan=0.0, posinf=0.0, neginf=0.0)
@@ -463,6 +566,7 @@ class FluxAttention(torch.nn.Module, AttentionModuleMixin):
         encoder_hidden_states: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         image_rotary_emb: Optional[torch.Tensor] = None,
+        pooled_projections: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> torch.Tensor:
         attn_parameters = set(inspect.signature(self.processor.__call__).parameters.keys())
@@ -470,7 +574,7 @@ class FluxAttention(torch.nn.Module, AttentionModuleMixin):
         unused_kwargs = [k for k in kwargs.keys() if (k not in attn_parameters and k not in quiet_attn_parameters)]
         if len(unused_kwargs) > 0: logger.warning(f"joint_attention_kwargs {unused_kwargs} are not expected by {self.processor.__class__.__name__} and will be ignored.")
         kwargs = {k: v for k, v in kwargs.items() if k in attn_parameters}
-        return self.processor(self, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb, **kwargs)
+        return self.processor(self, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb, pooled_projections=pooled_projections, **kwargs)
 
 @maybe_allow_in_graph
 class FluxSingleTransformerBlock(nn.Module):
@@ -499,6 +603,7 @@ class FluxSingleTransformerBlock(nn.Module):
         temb: torch.Tensor,
         image_rotary_emb: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         joint_attention_kwargs: Optional[Dict[str, Any]] = None,
+        pooled_projections: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         text_seq_len = encoder_hidden_states.shape[1]
         hidden_states = torch.cat([encoder_hidden_states, hidden_states], dim=1)
@@ -510,6 +615,7 @@ class FluxSingleTransformerBlock(nn.Module):
         attn_output = self.attn(
             hidden_states=norm_hidden_states,
             image_rotary_emb=image_rotary_emb,
+            pooled_projections=pooled_projections,
             **joint_attention_kwargs,
         )
         hidden_states = torch.cat([attn_output, mlp_hidden_states], dim=2)
@@ -548,6 +654,7 @@ class FluxTransformerBlock(nn.Module):
         temb: torch.Tensor,
         image_rotary_emb: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         joint_attention_kwargs: Optional[Dict[str, Any]] = None,
+        pooled_projections: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         norm_hidden_states, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.norm1(hidden_states, emb=temb)
         norm_encoder_hidden_states, c_gate_msa, c_shift_mlp, c_scale_mlp, c_gate_mlp = self.norm1_context(encoder_hidden_states, emb=temb)
@@ -556,6 +663,7 @@ class FluxTransformerBlock(nn.Module):
             hidden_states=norm_hidden_states,
             encoder_hidden_states=norm_encoder_hidden_states,
             image_rotary_emb=image_rotary_emb,
+            pooled_projections = pooled_projections,
             **joint_attention_kwargs,
         )
         if len(attention_outputs) == 2: attn_output, context_attn_output = attention_outputs
@@ -730,6 +838,7 @@ class FluxTransformer2DModel(
                     temb=temb,
                     image_rotary_emb=image_rotary_emb,
                     joint_attention_kwargs=ja,
+                    pooled_projections = pooled_projections
                 )
         for index_block, block in enumerate(self.single_transformer_blocks):
             ja = joint_attention_kwargs.copy()
@@ -742,6 +851,7 @@ class FluxTransformer2DModel(
                     temb=temb,
                     image_rotary_emb=image_rotary_emb,
                     joint_attention_kwargs=ja,
+                    pooled_projections = pooled_projections
                 )
         hidden_states = self.norm_out(hidden_states, temb)
         output = self.proj_out(hidden_states)

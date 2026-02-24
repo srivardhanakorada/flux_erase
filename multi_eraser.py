@@ -11,15 +11,19 @@ MODEL_ID = "black-forest-labs/FLUX.1-schnell"
 #     "Christiano Ronaldo": ["Lionel Messi", "Zlatan Ibrahimović", "Sergio Ramos"],
 #     "Michael Jackson": ["Taylor Swift", "Ed Sheeran", "Justin Bieber"],
 # }
+# TARGETS_AND_RETAINS = {
+#     "Donald Trump": ["Melania Trump", "Barack Obama", "Hillary Clinton"],
+#     "Michael Jackson": ['Ed Sheeran','Taylor Swift','Justin Bieber'],
+#     "Christiano Ronaldo": ["Lionel Messi", "Zlatan Ibrahimović", "Sergio Ramos"]
+# }
+
 TARGETS_AND_RETAINS = {
-    "Donald Trump": ["Melania Trump", "Barack Obama", "Hillary Clinton"],
-    "Michael Jackson": ['Ed Sheeran','Taylor Swift','Justin Bieber'],
-    "Christiano Ronaldo": ["Lionel Messi", "Zlatan Ibrahimović", "Sergio Ramos"]
+    "Dog": ['Sheep']
 }
 
 TARGETS = list(TARGETS_AND_RETAINS.keys())
 RETAINS_COMBINED = sorted({r for rs in TARGETS_AND_RETAINS.values() for r in rs})
-OUTDIR = "multi_concept_with_anchoring_2_man_gamma_3"
+OUTDIR = "temp"
 os.makedirs(OUTDIR, exist_ok=True)
 N_SAMPLES = 5
 BASE_SEED = 0
@@ -29,7 +33,7 @@ H, W = 768, 768
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
 PROJ_STRENGTH = 6.0
-ANCHOR = "man"
+ANCHOR = "cat"
 PROJ_EPS = 1e-8
 VT_DEDUP_COS_THR = 0.98
 MAX_TARGET_VT_PER_BLOCK = 8
@@ -140,8 +144,13 @@ def main():
         if SAVE_RECORD_IMAGES:
             save_img(img, os.path.join(OUTDIR, "record_target", f"{i:02d}_{target}.png"))
     print("[4/4] Applying multi-concept eraser and sampling images...")
+    RETAINS_COMBINED.append("Doggo")
+    RETAINS_COMBINED.append("Mans best friend")
+    RETAINS_COMBINED.append("Hound")
+    RETAINS_COMBINED.append("Canine")
     PROBES = [("target", t) for t in TARGETS] + [("retain", r) for r in RETAINS_COMBINED]
     for kind, concept in PROBES:
+        print(f"Erasing {kind}: {concept}")
         p = prompt_for_person(concept)
         base_imgs = []
         for n in range(N_SAMPLES):
@@ -170,7 +179,6 @@ def main():
             save_img(im, os.path.join(OUTDIR, "samples", kind, safe_name, f"baseline_{n:02d}.png"))
         for n, im in enumerate(erased_imgs):
             save_img(im, os.path.join(OUTDIR, "samples", kind, safe_name, f"erased_{n:02d}.png"))
-        print(f"DONE {kind}: {concept}")
     print(f"\nDone. Results in: {OUTDIR}")
 
 if __name__ == "__main__": main()
