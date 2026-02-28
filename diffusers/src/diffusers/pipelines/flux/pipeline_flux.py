@@ -1,31 +1,5 @@
-# pipeline_flux.py
-# ================================================================
-# Changes for compatibility with CORA-style transformer_flux.py
-#
-# transformer_flux.py now expects (optional) keys in joint_attention_kwargs:
-#   - record_target_vt: bool
-#   - record_retain_vt: bool
-#   - record_anchor_vt: bool
-#   - record_concept: Optional[str]   (REQUIRED if record_target_vt or record_anchor_vt)
-#   - active_concept: Optional[str]   (optional; if None -> union erase)
-#   - use_anchors: bool              (if active_concept provided and anchors exist -> replace)
-#   - proj_token_end: int            (token window end; we compute robustly)
-#
-# Additionally, transformer_flux.py provides:
-#   - flux_finalize_cora_bases(retain_top_k=3)
-#   - flux_reset_vt_banks(reset_retain=True)
-#
-# This file updates:
-#  1) proj_token_end computation (kept, but made robust to CLIP/T5 mismatch)
-#  2) concept-embed recording hook: REMOVED (transformer now records internally via vt banks)
-#  3) Convenience: if caller sets finalize_cora_bases=True, we call flux_finalize_cora_bases()
-#     at the end of a recording run (record_* flags on and apply_target_proj off).
-#  4) No breaking changes if you don't use erasure flags.
-# ================================================================
-
 import inspect
 from typing import Any, Callable, Dict, List, Optional, Union
-
 import numpy as np  # type: ignore
 import torch  # type: ignore
 from transformers import (  # type: ignore
@@ -36,7 +10,6 @@ from transformers import (  # type: ignore
     T5EncoderModel,
     T5TokenizerFast,
 )
-
 from ...image_processor import PipelineImageInput, VaeImageProcessor
 from ...loaders import FluxIPAdapterMixin, FluxLoraLoaderMixin, FromSingleFileMixin, TextualInversionLoaderMixin
 from ...models import AutoencoderKL, FluxTransformer2DModel
@@ -51,7 +24,6 @@ from ...utils import (
 from ...utils.torch_utils import randn_tensor
 from ..pipeline_utils import DiffusionPipeline
 from .pipeline_output import FluxPipelineOutput
-
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 EXAMPLE_DOC_STRING = """
@@ -61,7 +33,6 @@ EXAMPLE_DOC_STRING = """
         >>> from diffusers import FluxPipeline
         ```
 """
-
 
 def calculate_shift(
     image_seq_len,
@@ -74,7 +45,6 @@ def calculate_shift(
     b = base_shift - m * base_seq_len
     mu = image_seq_len * m + b
     return mu
-
 
 def retrieve_timesteps(
     scheduler,
@@ -148,7 +118,6 @@ def _compute_proj_token_end_from_clip(
     # Conservative: take min across batch
     clip_end = int(first_eos.clamp(min=1, max=Lc).min().item())
     return clip_end
-
 
 class FluxPipeline(
     DiffusionPipeline,
@@ -567,13 +536,11 @@ class FluxPipeline(
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
         max_sequence_length: int = 512,
         disable_clip: bool = False,
-        # ---- NEW convenience flags for CORA flow ----
         finalize_cora_bases: bool = False,
         cora_retain_top_k: int = 3,
     ):
         height = height or self.default_sample_size * self.vae_scale_factor
         width = width or self.default_sample_size * self.vae_scale_factor
-
         self.check_inputs(
             prompt,
             prompt_2,
@@ -588,23 +555,15 @@ class FluxPipeline(
             callback_on_step_end_tensor_inputs=callback_on_step_end_tensor_inputs,
             max_sequence_length=max_sequence_length,
         )
-
         self._guidance_scale = guidance_scale
         self._joint_attention_kwargs = (joint_attention_kwargs or {}).copy()
         self._current_timestep = None
         self._interrupt = False
-
-        if prompt is not None and isinstance(prompt, str):
-            batch_size = 1
-        elif prompt is not None and isinstance(prompt, list):
-            batch_size = len(prompt)
-        else:
-            batch_size = prompt_embeds.shape[0]
-
+        if prompt is not None and isinstance(prompt, str): batch_size = 1
+        elif prompt is not None and isinstance(prompt, list): batch_size = len(prompt)
+        else: batch_size = prompt_embeds.shape[0]
         device = self._execution_device
-
         lora_scale = self.joint_attention_kwargs.get("scale", None) if self.joint_attention_kwargs is not None else None
-
         prompt_embeds, pooled_prompt_embeds, text_ids = self.encode_prompt(
             prompt=prompt,
             prompt_2=prompt_2,
@@ -616,15 +575,8 @@ class FluxPipeline(
             lora_scale=lora_scale,
             disable_clip=disable_clip,
         )
-
-        # ------------------------------------------------------------------
-        # proj_token_end: used by transformer_flux.py to limit text tokens edited
-        # We compute EOS in CLIP tokenization, then clamp with T5 length.
-        # ------------------------------------------------------------------
         clip_prompt = prompt
-        if disable_clip:
-            clip_prompt = prompt_2 if (prompt_2 is not None) else prompt
-
+        if disable_clip: clip_prompt = prompt_2 if (prompt_2 is not None) else prompt
         clip_end = _compute_proj_token_end_from_clip(
             self.tokenizer,
             clip_prompt,
@@ -633,12 +585,6 @@ class FluxPipeline(
         T5L = int(prompt_embeds.shape[1])
         proj_end = int(max(1, min(clip_end, T5L)))
         self._joint_attention_kwargs["proj_token_end"] = proj_end
-
-        # ------------------------------------------------------------------
-        # IMPORTANT: remove old "flux_add_concept_embed" hook.
-        # New transformer records vt banks internally; no extra embed tracking.
-        # ------------------------------------------------------------------
-
         num_channels_latents = self.transformer.config.in_channels // 4
         latents, latent_image_ids = self.prepare_latents(
             batch_size * num_images_per_prompt,
@@ -650,11 +596,8 @@ class FluxPipeline(
             generator,
             latents,
         )
-
         sigmas = np.linspace(1.0, 1 / num_inference_steps, num_inference_steps) if sigmas is None else sigmas
-        if hasattr(self.scheduler.config, "use_flow_sigmas") and self.scheduler.config.use_flow_sigmas:
-            sigmas = None
-
+        if hasattr(self.scheduler.config, "use_flow_sigmas") and self.scheduler.config.use_flow_sigmas: sigmas = None
         image_seq_len = latents.shape[1]
         mu = calculate_shift(
             image_seq_len,
@@ -663,7 +606,6 @@ class FluxPipeline(
             self.scheduler.config.get("base_shift", 0.5),
             self.scheduler.config.get("max_shift", 1.15),
         )
-
         timesteps, num_inference_steps = retrieve_timesteps(
             self.scheduler,
             num_inference_steps,
@@ -671,31 +613,20 @@ class FluxPipeline(
             sigmas=sigmas,
             mu=mu,
         )
-
         num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)
         self._num_timesteps = len(timesteps)
-
         if self.transformer.config.guidance_embeds:
             guidance = torch.full([1], guidance_scale, device=device, dtype=torch.float32)
             guidance = guidance.expand(latents.shape[0])
-        else:
-            guidance = None
-
+        else: guidance = None
         image_embeds = None
         self.scheduler.set_begin_index(0)
-
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
-                if self.interrupt:
-                    continue
-
+                if self.interrupt: continue
                 self._current_timestep = t
-
-                if image_embeds is not None:
-                    self._joint_attention_kwargs["ip_adapter_image_embeds"] = image_embeds
-
+                if image_embeds is not None: self._joint_attention_kwargs["ip_adapter_image_embeds"] = image_embeds
                 timestep = t.expand(latents.shape[0]).to(latents.dtype)
-
                 with self.transformer.cache_context("cond"):
                     noise_pred = self.transformer(
                         hidden_states=latents,
@@ -708,31 +639,18 @@ class FluxPipeline(
                         joint_attention_kwargs=self.joint_attention_kwargs,
                         return_dict=False,
                     )[0]
-
                 latents_dtype = latents.dtype
                 latents = self.scheduler.step(noise_pred, t, latents, return_dict=False)[0]
-
                 if latents.dtype != latents_dtype:
-                    if torch.backends.mps.is_available():
-                        latents = latents.to(latents_dtype)
-
+                    if torch.backends.mps.is_available(): latents = latents.to(latents_dtype)
                 if callback_on_step_end is not None:
                     callback_kwargs = {}
-                    for k in callback_on_step_end_tensor_inputs:
-                        callback_kwargs[k] = locals()[k]
+                    for k in callback_on_step_end_tensor_inputs: callback_kwargs[k] = locals()[k]
                     callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
                     latents = callback_outputs.pop("latents", latents)
                     prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
-
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
-                    progress_bar.update()
-
+                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0): progress_bar.update()
         self._current_timestep = None
-
-        # --------------------------------------------------------------
-        # Optional: finalize CORA bases automatically after recording run.
-        # Trigger condition: any record_* flag is on AND apply_target_proj is off.
-        # --------------------------------------------------------------
         if finalize_cora_bases:
             try:
                 from diffusers.models.transformers.transformer_flux import flux_finalize_cora_bases
@@ -745,7 +663,6 @@ class FluxPipeline(
                     flux_finalize_cora_bases(retain_top_k=int(cora_retain_top_k))
             except Exception as e:
                 logger.warning(f"finalize_cora_bases=True but flux_finalize_cora_bases failed: {e}")
-
         if output_type == "latent":
             image = latents
         else:
@@ -753,9 +670,7 @@ class FluxPipeline(
             latents = (latents / self.vae.config.scaling_factor) + self.vae.config.shift_factor
             image = self.vae.decode(latents, return_dict=False)[0]
             image = self.image_processor.postprocess(image, output_type=output_type)
-
         self.maybe_free_model_hooks()
-
-        if not return_dict:
-            return (image,)
+        if not return_dict: return (image,)
         return FluxPipelineOutput(images=image)
+    
