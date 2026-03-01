@@ -7,30 +7,34 @@ from diffusers import FluxPipeline
 from diffusers.models.transformers.transformer_flux import flux_reset_vt_banks, flux_finalize_cora_bases #type:ignore
 
 MODEL_ID = "black-forest-labs/FLUX.1-schnell"
+PROMPT_TEMPLATES = [
+    "a photo of {}",
+    "{}",
+    "high quality photo of {}"
+]
 TARGETS: List[str] = [
-    "Donald Trump",
+    "Brinjal",
 ]
 RETAIN_PROMPTS: List[str] = [
-    "Hillary Clinton",
-    "Barack Obama",
-    "Melania Trump",
+    "Tomato",
+    "Bottle Gourd",
+    "Spinach"
 ]
 NON_TARGETS: List[str] = [
-    "President of the United States of America",
-    "Bill Clinton",
-    "Dog",
-    "Lemon"
+    "Aubergine",
+    "Egg Plant",
+    "Lemon",
+    "Car"
 ]
-ANCHOR_PROMPT = "Man"
-OUTDIR = "single_celeb"
+ANCHOR_PROMPT = "potato"
+OUTDIR = "brinjal"
 os.makedirs(OUTDIR, exist_ok=True)
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
-STRENGTH_TAU = 0.1
-STRENGTH_GAMMA = 2.0
-ANCHOR_STRENGTH = 3.0
+STRENGTH_TAU = 0.10
+STRENGTH_GAMMA = 3.0
+ANCHOR_STRENGTH = 1.0
 
-PROJ_TOKEN_END = 128
 USE_ANCHORS = True
 H, W = 768, 768
 STEPS = 4
@@ -85,7 +89,7 @@ def _run_one(
         "strength_gamma": STRENGTH_GAMMA,
         "anchor_strength": ANCHOR_STRENGTH,
         "proj_eps": 1e-8,
-        "proj_token_end": PROJ_TOKEN_END,
+        "debug_tokens" : True,
     }
     out = pipe(
         prompt=prompt,
@@ -125,13 +129,15 @@ def main():
             seed=1000 + i,
         )
     for i, t in enumerate(TARGETS):
-        _run_one(
-            pipe,
-            prompt=t,
-            record_target_vt=True,
-            record_concept=t,
-            seed=2000 + i,
-        )
+        for pt in PROMPT_TEMPLATES:
+            prompt = pt.format(t)
+            _run_one(
+                pipe,
+                prompt=prompt,
+                record_target_vt=True,
+                record_concept=t,
+                seed=2000 + i,
+            )
     _run_one(
         pipe,
         prompt=ANCHOR_PROMPT,

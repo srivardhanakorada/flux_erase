@@ -189,75 +189,75 @@ class FluxPipeline(
         self.default_sample_size = 128
 
 
-    def _debug_tokenization(
-        self,
-        prompt: Union[str, List[str]],
-        *,
-        max_t5_len: int = 512,
-        max_clip_len: Optional[int] = None,
-        print_limit: int = 200,
-    ):
-        """
-        Prints how CLIP and T5 tokenize the prompt(s).
-        - For CLIP: uses self.tokenizer (77 max usually)
-        - For T5: uses self.tokenizer_2 (512 max)
-        """
-        prompts = [prompt] if isinstance(prompt, str) else list(prompt)
-        max_clip_len = max_clip_len or self.tokenizer_max_length
+    # def _debug_tokenization(
+    #     self,
+    #     prompt: Union[str, List[str]],
+    #     *,
+    #     max_t5_len: int = 512,
+    #     max_clip_len: Optional[int] = None,
+    #     print_limit: int = 200,
+    # ):
+    #     """
+    #     Prints how CLIP and T5 tokenize the prompt(s).
+    #     - For CLIP: uses self.tokenizer (77 max usually)
+    #     - For T5: uses self.tokenizer_2 (512 max)
+    #     """
+    #     prompts = [prompt] if isinstance(prompt, str) else list(prompt)
+    #     max_clip_len = max_clip_len or self.tokenizer_max_length
 
-        # ---- CLIP ----
-        clip = self.tokenizer(
-            prompts,
-            padding="max_length",
-            max_length=max_clip_len,
-            truncation=True,
-            return_tensors="pt",
-        )
-        clip_ids = clip.input_ids  # [B, L]
-        eos_id = self.tokenizer.eos_token_id
-        bos_id = getattr(self.tokenizer, "bos_token_id", None)
+    #     # ---- CLIP ----
+    #     clip = self.tokenizer(
+    #         prompts,
+    #         padding="max_length",
+    #         max_length=max_clip_len,
+    #         truncation=True,
+    #         return_tensors="pt",
+    #     )
+    #     clip_ids = clip.input_ids  # [B, L]
+    #     eos_id = self.tokenizer.eos_token_id
+    #     bos_id = getattr(self.tokenizer, "bos_token_id", None)
 
-        print("\n================ TOKEN DEBUG (CLIP) ================")
-        for bi, p in enumerate(prompts):
-            ids = clip_ids[bi].tolist()
-            # find first EOS
-            first_eos = ids.index(eos_id) if eos_id in ids else len(ids)
-            # decode tokens (token-level)
-            toks = self.tokenizer.convert_ids_to_tokens(ids)
-            # shorten print
-            toks_show = toks[: min(len(toks), print_limit)]
-            print(f"\n[CLIP] prompt[{bi}] = {repr(p)}")
-            print(f"[CLIP] len(all)={len(ids)}  first_eos={first_eos}  eos_id={eos_id}  bos_id={bos_id}")
-            print("[CLIP] tokens:", toks_show)
+    #     print("\n================ TOKEN DEBUG (CLIP) ================")
+    #     for bi, p in enumerate(prompts):
+    #         ids = clip_ids[bi].tolist()
+    #         # find first EOS
+    #         first_eos = ids.index(eos_id) if eos_id in ids else len(ids)
+    #         # decode tokens (token-level)
+    #         toks = self.tokenizer.convert_ids_to_tokens(ids)
+    #         # shorten print
+    #         toks_show = toks[: min(len(toks), print_limit)]
+    #         print(f"\n[CLIP] prompt[{bi}] = {repr(p)}")
+    #         print(f"[CLIP] len(all)={len(ids)}  first_eos={first_eos}  eos_id={eos_id}  bos_id={bos_id}")
+    #         print("[CLIP] tokens:", toks_show)
 
-        # ---- T5 ----
-        t5 = self.tokenizer_2(
-            prompts,
-            padding="max_length",
-            max_length=max_t5_len,
-            truncation=True,
-            return_tensors="pt",
-        )
-        t5_ids = t5.input_ids
-        # T5 often uses pad=0, eos=1 (but read from tokenizer)
-        t5_eos = self.tokenizer_2.eos_token_id
-        t5_pad = self.tokenizer_2.pad_token_id
+    #     # ---- T5 ----
+    #     t5 = self.tokenizer_2(
+    #         prompts,
+    #         padding="max_length",
+    #         max_length=max_t5_len,
+    #         truncation=True,
+    #         return_tensors="pt",
+    #     )
+    #     t5_ids = t5.input_ids
+    #     # T5 often uses pad=0, eos=1 (but read from tokenizer)
+    #     t5_eos = self.tokenizer_2.eos_token_id
+    #     t5_pad = self.tokenizer_2.pad_token_id
 
-        print("\n================ TOKEN DEBUG (T5) ==================")
-        for bi, p in enumerate(prompts):
-            ids = t5_ids[bi].tolist()
-            first_eos = ids.index(t5_eos) if t5_eos in ids else len(ids)
-            # tokens: T5TokenizerFast supports convert_ids_to_tokens too
-            toks = self.tokenizer_2.convert_ids_to_tokens(ids)
-            toks_show = toks[: min(len(toks), print_limit)]
-            # count "real" tokens before padding (best-effort)
-            first_pad = ids.index(t5_pad) if (t5_pad in ids) else len(ids)
-            real_len = min(first_pad, len(ids))
-            print(f"\n[T5]   prompt[{bi}] = {repr(p)}")
-            print(f"[T5]   len(all)={len(ids)}  real_len~={real_len}  first_eos={first_eos}  eos_id={t5_eos}  pad_id={t5_pad}")
-            print("[T5]   tokens:", toks_show)
+    #     print("\n================ TOKEN DEBUG (T5) ==================")
+    #     for bi, p in enumerate(prompts):
+    #         ids = t5_ids[bi].tolist()
+    #         first_eos = ids.index(t5_eos) if t5_eos in ids else len(ids)
+    #         # tokens: T5TokenizerFast supports convert_ids_to_tokens too
+    #         toks = self.tokenizer_2.convert_ids_to_tokens(ids)
+    #         toks_show = toks[: min(len(toks), print_limit)]
+    #         # count "real" tokens before padding (best-effort)
+    #         first_pad = ids.index(t5_pad) if (t5_pad in ids) else len(ids)
+    #         real_len = min(first_pad, len(ids))
+    #         print(f"\n[T5]   prompt[{bi}] = {repr(p)}")
+    #         print(f"[T5]   len(all)={len(ids)}  real_len~={real_len}  first_eos={first_eos}  eos_id={t5_eos}  pad_id={t5_pad}")
+    #         print("[T5]   tokens:", toks_show)
 
-        print("====================================================\n")
+    #     print("====================================================\n")
 
     def _get_t5_prompt_embeds(
         self,
@@ -381,12 +381,12 @@ class FluxPipeline(
             prompt_2 = prompt_for_t5
 
         # DEBUG: see token split
-        if self._joint_attention_kwargs.get("debug_tokens", False):
-            self._debug_tokenization(
-                prompt if not disable_clip else (prompt_2 if prompt_2 is not None else prompt_for_t5),
-                max_t5_len=max_sequence_length,
-                max_clip_len=self.tokenizer_max_length,
-            )
+        # if self._joint_attention_kwargs.get("debug_tokens", False):
+        #     self._debug_tokenization(
+        #         prompt if not disable_clip else (prompt_2 if prompt_2 is not None else prompt_for_t5),
+        #         max_t5_len=max_sequence_length,
+        #         max_clip_len=self.tokenizer_max_length,
+        #     )
 
         if prompt_embeds is None:
             prompt_2 = prompt_2 or prompt
