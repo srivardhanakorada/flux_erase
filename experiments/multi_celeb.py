@@ -31,15 +31,15 @@ from diffusers.models.transformers.transformer_flux import flux_reset_vt_banks, 
 MODEL_ID = "black-forest-labs/FLUX.1-schnell"
 PROMPT_TEMPLATES = [
     "a photo of {}",
-    "a high-quality portrait photo of {}",
-    "{}, studio portrait, sharp focus",
-    "{}, professional headshot",
-    "close-up photo of {}",
-    "cinematic portrait of {}",
-    "{} photographed in natural light",
-    "detailed facial photo of {}",
-    "{} photographed with DSLR",
-    "realistic photo of {}",
+    # "a high-quality portrait photo of {}",
+    # "{}, studio portrait, sharp focus",
+    # "{}, professional headshot",
+    # "close-up photo of {}",
+    # "cinematic portrait of {}",
+    # "{} photographed in natural light",
+    # "detailed facial photo of {}",
+    # "{} photographed with DSLR",
+    # "realistic photo of {}",
 ]
 RECORDING_TEMPLATES = [
     "a photo of {}",
@@ -63,7 +63,7 @@ RETAINS: List[str] = [
     "Justin Bieber",
 ]
 ANCHOR = "A generic person"
-OUTDIR = "results/multi_celeb"
+OUTDIR = "temp"
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
 STRENGTH_TAU = 0.1
@@ -75,7 +75,7 @@ STEPS = 4
 GUIDANCE = 3.5
 N_IMAGES_PER_PROMPT = 1
 START_SEED = 0
-END_SEED = 24
+END_SEED = 0
 SEEDS = [i for i in range(START_SEED,END_SEED+1)]
 os.makedirs(OUTDIR, exist_ok=True)
 ###
