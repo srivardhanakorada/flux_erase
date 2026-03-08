@@ -9,7 +9,6 @@ from diffusers.models.transformers.transformer_flux import (  # type: ignore
 )
 
 MODEL_ID = "black-forest-labs/FLUX.1-schnell"
-
 PROMPT_TEMPLATES = [
     "a photo of {}",
     "a high-quality portrait photo of {}",
@@ -22,79 +21,67 @@ PROMPT_TEMPLATES = [
     "{} photographed with DSLR",
     "realistic photo of {}",
 ]
-
-# lighter recording set
 RECORDING_TEMPLATES = [
     "a photo of {}",
     "{} photographed with DSLR",
+    "{}, studio portrait, sharp focus",
 ]
-
 TARGETS: List[str] = [
     "Donald Trump",
+    "Hugh Jackman",
+    "Michael Jackson",
 ]
-
 RETAINS = [
     "Barack Obama",
-    "Joe Biden",
-    "Bill Clinton",
+    "Brad Pitt",
+    "Tom Cruise",
 ]
-
-# lighter COIP person bank
+NON_TARGETS = [
+    "Melania Trump",
+    "Hillary Clinton",
+    "Angelina Jolie",
+    "Ed Sheeran",
+    "Taylor Swift",
+    "Justin Bieber",
+]
 PERSON_BANK = [
-    "a person",
-    "a male person",
-    "a female person",
+    "a portrait of a person",
+    "a portrait of a man",
+    "a portrait of a woman",
     "a middle-aged man",
     "a middle-aged woman",
 ]
-
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
-
-OUTDIR = f"temp_coip_d{DUAL_BLOCKS[0]}_{DUAL_BLOCKS[-1]}_s{SINGLE_BLOCKS[0]}_{SINGLE_BLOCKS[-1]}"
-
+OUTDIR =  f"results_new/multi_celeb"
 STRENGTH_TAU = 0.1
-STRENGTH_GAMMA = 1.5
+STRENGTH_GAMMA = 1.35
 ANCHOR_STRENGTH = 1.5
-
-# start without anchors to reduce memory + isolate COIP
 USE_ANCHORS = True
-ANCHOR = "a middle-aged man"
+ANCHOR = "a portrait of a person"
 PERSON_TOP_K = 2
-RETAIN_TOP_K = 2
-
-# separate recording and generation sizes
+RETAIN_TOP_K = 4
 REC_H, REC_W = 512, 512
 GEN_H, GEN_W = 512, 512
-
 STEPS = 4
 GUIDANCE = 3.5
 N_IMAGES_PER_PROMPT = 1
-
 START_SEED = 0
-END_SEED = 0
+END_SEED = 24
 SEEDS = [i for i in range(START_SEED, END_SEED + 1)]
-
 os.makedirs(OUTDIR, exist_ok=True)
 
-
-def _save(img: Image.Image, path: str):
-    img.save(path)
-
+def _save(img: Image.Image, path: str): img.save(path)
 
 def _sanitize(s: str, max_len: int = 120) -> str:
     s = s.strip().replace(" ", "_")
     return "".join(c for c in s if c.isalnum() or c in ("_", "-"))[:max_len]
 
-
-def _make_prompt(x: str, prompt_template: str) -> str:
-    return prompt_template.format(x)
-
+def _make_prompt(x: str, prompt_template: str) -> str: return prompt_template.format(x)
 
 def _maybe_clear_cache():
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-
 
 @torch.no_grad()
 def run_one(
@@ -111,11 +98,9 @@ def run_one(
     record_mode: bool = False,
 ):
     g = torch.Generator(device=pipe.device).manual_seed(seed)
-
     height = REC_H if record_mode else GEN_H
     width = REC_W if record_mode else GEN_W
     output_type = "latent" if record_mode else "pil"
-
     ja = {
         "record_target_vt": record_target_vt,
         "record_retain_vt": record_retain_vt,
@@ -132,7 +117,6 @@ def run_one(
         "proj_eps": 1e-8,
         "debug_tokens": False,
     }
-
     out = pipe(
         prompt=prompt,
         height=height,
@@ -144,13 +128,10 @@ def run_one(
         joint_attention_kwargs=ja,
         output_type=output_type,
     )
-
     if record_mode:
         _maybe_clear_cache()
         return None
-
     return out.images[0]
-
 
 def generate_images(pipe: FluxPipeline, items: List[str], templates: List[str], split_name: str):
     for item in items:
@@ -158,7 +139,6 @@ def generate_images(pipe: FluxPipeline, items: List[str], templates: List[str], 
         after_path = os.path.join(OUTDIR, split_name, item, "after")
         os.makedirs(before_path, exist_ok=True)
         os.makedirs(after_path, exist_ok=True)
-
         for prompt_template in templates:
             p = _make_prompt(item, prompt_template)
             for s in SEEDS:
@@ -167,23 +147,17 @@ def generate_images(pipe: FluxPipeline, items: List[str], templates: List[str], 
                 edit_img = run_one(pipe, p, apply_target_proj=True, seed=s, record_mode=False)
                 _save(base_img, os.path.join(before_path, file_name))
                 _save(edit_img, os.path.join(after_path, file_name))
-
         print(f"{split_name} :: {item} DONE!")
-
 
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
-
     pipe = FluxPipeline.from_pretrained(
         MODEL_ID,
         torch_dtype=dtype,
     ).to(device)
-
     flux_reset_vt_banks(reset_retain=True)
     _maybe_clear_cache()
-
-    # 1) retain bank
     for i, rp in enumerate(RETAINS):
         run_one(
             pipe,
@@ -192,8 +166,6 @@ def main():
             seed=1000 + i,
             record_mode=True,
         )
-
-    # 2) person/category bank
     for i, pp in enumerate(PERSON_BANK):
         run_one(
             pipe,
@@ -202,8 +174,6 @@ def main():
             seed=2000 + i,
             record_mode=True,
         )
-
-    # 3) target bank
     for i, t in enumerate(TARGETS):
         for j, pt in enumerate(RECORDING_TEMPLATES):
             prompt = pt.format(t)
@@ -215,8 +185,6 @@ def main():
                 seed=3000 + 100 * i + j,
                 record_mode=True,
             )
-
-    # 4) anchor
     if USE_ANCHORS:
         run_one(
             pipe,
@@ -225,27 +193,14 @@ def main():
             seed=4000,
             record_mode=True,
         )
-
-    # 5) finalize
     flux_finalize_cora_bases(
         retain_top_k=RETAIN_TOP_K,
         person_top_k=PERSON_TOP_K,
     )
     _maybe_clear_cache()
-
-    # 6) generate
     generate_images(pipe, TARGETS, PROMPT_TEMPLATES, split_name="targets")
     generate_images(pipe, RETAINS, PROMPT_TEMPLATES, split_name="retains")
-
-    eval_people = [
-        "A generic person",
-        "Hillary Clinton",
-        "Melania Trump"
-    ]
-    generate_images(pipe, eval_people, PROMPT_TEMPLATES, split_name="non_targets")
-
+    generate_images(pipe, NON_TARGETS, PROMPT_TEMPLATES, split_name="non_targets")
     print(f"Done. Results saved to: {OUTDIR}")
 
-
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()

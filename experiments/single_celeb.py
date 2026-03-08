@@ -44,25 +44,29 @@ PROMPT_TEMPLATES = [
 RECORDING_TEMPLATES = [
     "a photo of {}",
     "{} photographed with DSLR",
-    "Photo of {} in natural light"
+    # "Photo of {} in natural light"
 ]
 TARGETS: List[str] = [
     "Donald Trump",
 ]
-RETAINS: List[str] = [
-    "Melania Trump",
-    "Hillary Clinton",
-    "Barack Obama"
+RETAINS = [
+    "Barack Obama",
+    "Joe Biden",
+    "Bill Clinton",
 ]
-DUAL_BLOCKS = list(range(9, 19))
-SINGLE_BLOCKS = list(range(0, 10))
-ANCHOR = "A generic person"
-OUTDIR = f"temp_{DUAL_BLOCKS[0]}_{DUAL_BLOCKS[-1]}_{SINGLE_BLOCKS[0]}_{SINGLE_BLOCKS[-1]}"
+NON_RETAINS = [
+    "Hillary Clinton",
+    "Melania Trump"
+]
+ANCHOR = "a middle-aged man"
+DUAL_BLOCKS = list(range(0, 19))
+SINGLE_BLOCKS = list(range(0, 38))
+OUTDIR = f"temp_d{DUAL_BLOCKS[0]}_{DUAL_BLOCKS[-1]}_s{SINGLE_BLOCKS[0]}_{SINGLE_BLOCKS[-1]}"
 STRENGTH_TAU = 0.1
 STRENGTH_GAMMA = 1.5
 ANCHOR_STRENGTH = 1.5
 USE_ANCHORS = True
-H, W = 768, 768
+H, W = 512,512
 STEPS = 4
 GUIDANCE = 3.5
 N_IMAGES_PER_PROMPT = 1
@@ -148,6 +152,7 @@ def main():
     flux_finalize_cora_bases()
     generate_images(pipe, TARGETS,PROMPT_TEMPLATES)
     generate_images(pipe, RETAINS,PROMPT_TEMPLATES)
+    generate_images(pipe, NON_RETAINS,PROMPT_TEMPLATES)
     print(f"Done. Grids saved to: {OUTDIR}")
 if __name__ == "__main__": main()
 ###
