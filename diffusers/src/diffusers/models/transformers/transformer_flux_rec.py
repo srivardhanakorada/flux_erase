@@ -23,88 +23,50 @@ from ..normalization import AdaLayerNormContinuous, AdaLayerNormZero, AdaLayerNo
 
 logger = logging.get_logger(__name__)
 
-# ============================================================
-# Global banks / bases
-# ============================================================
-
 _FLUX_TARGET_VT_BANK_DUAL: Dict[int, Dict[str, List[torch.Tensor]]] = {}
 _FLUX_TARGET_VT_BANK_SINGLE: Dict[int, Dict[str, List[torch.Tensor]]] = {}
-
 _FLUX_RETAIN_VT_BANK_DUAL: Dict[int, List[torch.Tensor]] = {}
 _FLUX_RETAIN_VT_BANK_SINGLE: Dict[int, List[torch.Tensor]] = {}
-
-# NEW: person/category bank for COIP
-_FLUX_PERSON_VT_BANK_DUAL: Dict[int, List[torch.Tensor]] = {}
-_FLUX_PERSON_VT_BANK_SINGLE: Dict[int, List[torch.Tensor]] = {}
-
 _FLUX_ANCHOR_VT_BANK_DUAL_ONCE: Dict[int, List[torch.Tensor]] = {}
 _FLUX_ANCHOR_VT_BANK_SINGLE_ONCE: Dict[int, List[torch.Tensor]] = {}
-
 _FLUX_VRET_DUAL: Dict[int, torch.Tensor] = {}
 _FLUX_VRET_SINGLE: Dict[int, torch.Tensor] = {}
-
-# NEW: person/category basis
-_FLUX_VPERSON_DUAL: Dict[int, torch.Tensor] = {}
-_FLUX_VPERSON_SINGLE: Dict[int, torch.Tensor] = {}
-
-# legacy per-concept containers; kept for compatibility / debugging
 _FLUX_U_DUAL: Dict[int, Dict[str, torch.Tensor]] = {}
 _FLUX_U_SINGLE: Dict[int, Dict[str, torch.Tensor]] = {}
 _FLUX_A_DUAL: Dict[int, Dict[str, torch.Tensor]] = {}
 _FLUX_A_SINGLE: Dict[int, Dict[str, torch.Tensor]] = {}
-
-# COIP identity-residual union basis (re-using U_UNION names in inference path)
 _FLUX_U_UNION_DUAL: Dict[int, torch.Tensor] = {}
 _FLUX_U_UNION_SINGLE: Dict[int, torch.Tensor] = {}
-
 _FLUX_A_UNION_DUAL: Dict[int, torch.Tensor] = {}
 _FLUX_A_UNION_SINGLE: Dict[int, torch.Tensor] = {}
-
 _VT_DEDUP_COS_THR = 0.995
-_FLUX_RETAIN_LAMBDA = 0.75
-
+_FLUX_RETAIN_LAMBDA = 1.5
 
 def flux_reset_vt_banks(reset_retain: bool = True):
     global _FLUX_TARGET_VT_BANK_DUAL, _FLUX_TARGET_VT_BANK_SINGLE
     global _FLUX_RETAIN_VT_BANK_DUAL, _FLUX_RETAIN_VT_BANK_SINGLE
-    global _FLUX_PERSON_VT_BANK_DUAL, _FLUX_PERSON_VT_BANK_SINGLE
     global _FLUX_ANCHOR_VT_BANK_DUAL_ONCE, _FLUX_ANCHOR_VT_BANK_SINGLE_ONCE
     global _FLUX_VRET_DUAL, _FLUX_VRET_SINGLE
-    global _FLUX_VPERSON_DUAL, _FLUX_VPERSON_SINGLE
     global _FLUX_U_DUAL, _FLUX_U_SINGLE, _FLUX_A_DUAL, _FLUX_A_SINGLE
     global _FLUX_U_UNION_DUAL, _FLUX_U_UNION_SINGLE
     global _FLUX_A_UNION_DUAL, _FLUX_A_UNION_SINGLE
-
     _FLUX_TARGET_VT_BANK_DUAL.clear()
     _FLUX_TARGET_VT_BANK_SINGLE.clear()
-
     if reset_retain:
         _FLUX_RETAIN_VT_BANK_DUAL.clear()
         _FLUX_RETAIN_VT_BANK_SINGLE.clear()
-
-    _FLUX_PERSON_VT_BANK_DUAL.clear()
-    _FLUX_PERSON_VT_BANK_SINGLE.clear()
-
     _FLUX_ANCHOR_VT_BANK_DUAL_ONCE.clear()
     _FLUX_ANCHOR_VT_BANK_SINGLE_ONCE.clear()
-
     _FLUX_VRET_DUAL.clear()
     _FLUX_VRET_SINGLE.clear()
-
-    _FLUX_VPERSON_DUAL.clear()
-    _FLUX_VPERSON_SINGLE.clear()
-
     _FLUX_U_DUAL.clear()
     _FLUX_U_SINGLE.clear()
     _FLUX_A_DUAL.clear()
     _FLUX_A_SINGLE.clear()
-
     _FLUX_U_UNION_DUAL.clear()
     _FLUX_U_UNION_SINGLE.clear()
-
     _FLUX_A_UNION_DUAL.clear()
     _FLUX_A_UNION_SINGLE.clear()
-
 
 def _cos_sim_flat(a: torch.Tensor, b: torch.Tensor, eps: float = 1e-8) -> float:
     x = a.reshape(-1).to(torch.float32)
@@ -123,15 +85,12 @@ def _append_vt_dedup(
     if len(lst) == 0:
         lst.append(vt_new.detach())
         return
-
     best = max(_cos_sim_flat(vt_new, old) for old in lst)
     if best >= cos_thr:
         return
-
     lst.append(vt_new.detach())
     if max_keep is not None and max_keep > 0 and len(lst) > max_keep:
         del lst[0 : (len(lst) - max_keep)]
-
 
 def _bank_add_concept_vt(
     bank: Dict[int, Dict[str, List[torch.Tensor]]],
@@ -168,6 +127,7 @@ def _bank_add_anchor_once_vt(
     max_keep: int,
     dedup_thr: float,
 ):
+    # same structure as _bank_add_vt; kept separate for clarity
     if block_index not in bank:
         bank[block_index] = []
     _append_vt_dedup(bank[block_index], vt, cos_thr=dedup_thr, max_keep=max_keep)
@@ -216,45 +176,33 @@ def _cora_erase_replace(
     use_replace: bool,
 ) -> torch.Tensor:
     v32 = v_slice.to(torch.float32)
-
     if Vret is not None and Vret.numel() > 0 and Vret.shape[1] > 0:
         v_pres = _project_with_basis(v32, Vret)
         v_free = v32 - _FLUX_RETAIN_LAMBDA * v_pres
     else:
         v_pres = torch.zeros_like(v32)
         v_free = v32
-
-    if U is None or U.numel() == 0 or U.shape[1] == 0:
-        return v_slice
-
+    if U is None or U.numel() == 0 or U.shape[1] == 0: return v_slice
     t, r = _cora_score_and_coeff(v_free, U, eps=eps)
     m = (r >= tau).to(v_free.dtype).unsqueeze(-1)
-
     removed = torch.einsum("dr,btr->btd", U, t)
     v_free2 = v_free - gamma * m * removed
-
     if use_replace and A is not None and A.numel() > 0 and A.shape[1] > 0:
         A_ = A.to(dtype=torch.float32, device=v_free.device)
         U_ = U.to(dtype=torch.float32, device=v_free.device)
-
         A_ = A_ - U_ @ (U_.t() @ A_)
         A_ = _orth_columns(A_, eps=eps)
-
-        if A_.numel() > 0 and A_.shape[1] > 0:
+        if A_ is not None and A_.numel() > 0 and A_.shape[1] > 0:
             rA = A_.shape[1]
             rU = U_.shape[1]
-
-            if rA == rU:
-                added = torch.einsum("dr,btr->btd", A_, t)
+            if rA == rU: added = torch.einsum("dr,btr->btd", A_, t)
             elif rA == 1:
                 ts = t.sum(dim=-1, keepdim=True)
                 added = torch.einsum("d1,bt1->btd", A_, ts)
             else:
                 rr = min(rA, rU)
                 added = torch.einsum("dr,btr->btd", A_[:, :rr], t[:, :, :rr])
-
             v_free2 = v_free2 + anchor_strength * m * added
-
     v_out = v_pres + v_free2
     return v_out.to(dtype=v_slice.dtype)
 
@@ -271,253 +219,108 @@ def _make_attn_eos_duplicated_vt(
 ) -> torch.Tensor:
     assert vt.ndim == 4 and vt.shape[0] == 1
     assert q.shape == vt.shape and k.shape == vt.shape
-
     L, H, Dh = vt.shape[1], vt.shape[2], vt.shape[3]
-
-    if token_end is None:
-        token_end = min(2, L)
+    if token_end is None: token_end = min(2, L)
     token_end = int(max(1, min(token_end, L)))
-
     qh = q.permute(0, 2, 1, 3)
     kh = k.permute(0, 2, 1, 3)
     logits = torch.matmul(qh, kh.transpose(-1, -2)) / (Dh ** 0.5)
     A = F.softmax(logits, dim=-1)
-
-    if attn_mode == "col":
-        imp = A.mean(dim=-2)
-    elif attn_mode == "row":
-        imp = A.mean(dim=-1)
-    else:
-        raise ValueError("attn_mode must be 'col' or 'row'")
-
-    imp_slice = imp[:, :, :token_end]
-    w = imp_slice / imp_slice.sum(dim=-1, keepdim=True).clamp_min(eps)
-
+    if attn_mode == "col": imp = A.mean(dim=-2)
+    elif attn_mode == "row": imp = A.mean(dim=-1)
+    else: raise ValueError("attn_mode must be 'col' or 'row'")
+    imp_slice = imp[:, :, :token_end] 
+    w = imp_slice / imp_slice.sum(dim=-1, keepdim=True).clamp_min(eps)  
     vt_slice = vt[:, :token_end, :, :].permute(0, 2, 1, 3)
-    d = (w.unsqueeze(-1) * vt_slice).sum(dim=-2, keepdim=True)
-
-    if normalize_detector:
-        d = d / torch.linalg.norm(d, dim=-1, keepdim=True).clamp_min(eps)
-
+    d = (w.unsqueeze(-1) * vt_slice).sum(dim=-2, keepdim=True)         
+    if normalize_detector: d = d / torch.linalg.norm(d, dim=-1, keepdim=True).clamp_min(eps)
     d = d.permute(0, 2, 1, 3)
     vt2 = vt.clone()
-    if L > fill_from:
-        vt2[:, fill_from:, :, :] = d.expand(1, L - fill_from, H, Dh)
-
+    if L > fill_from: vt2[:, fill_from:, :, :] = d.expand(1, L - fill_from, H, Dh)
     return vt2
 
-def _basis_from_vt_list(v_list: Optional[List[torch.Tensor]], *, top_k: int = 6, eps: float = 1e-8) -> Optional[torch.Tensor]:
-    if v_list is None or len(v_list) == 0:
-        return None
-
-    dirs: List[torch.Tensor] = []
-    for vt in v_list:
-        d = _vt_to_dir(vt, eps=eps)
-        if d.norm() <= eps:
-            continue
-        d = d / (d.norm() + eps)
-        dirs.append(d)
-
-    if len(dirs) == 0:
-        return None
-
-    M = torch.stack(dirs, dim=1)
-    Q = _orth_columns(M, eps=eps)
-
-    if Q.shape[1] > top_k:
-        Q = Q[:, :top_k]
-
-    return Q
-
 def _retain_basis_from_vt_list(v_list: Optional[List[torch.Tensor]], *, top_k: int = 3) -> Optional[torch.Tensor]:
-    return _basis_from_vt_list(v_list, top_k=top_k)
+    if v_list is None or len(v_list) == 0: return None
+    U_stack = None
+    for vt in v_list:
+        d = _vt_to_dir(vt)
+        M = d.unsqueeze(1)
+        u, _, _ = torch.linalg.svd(M, full_matrices=False)
+        imp = u[:, : min(top_k, u.shape[1])]
+        U_stack = imp if U_stack is None else torch.cat([U_stack, imp], dim=1)
+    if U_stack is None: return None
+    Vret = _orth_columns(U_stack)
+    return Vret
 
-def flux_finalize_cora_bases(
-    *,
-    retain_top_k: int = 6,
-    person_top_k: int = 6,
-    eps: float = 1e-8,
-):
-    """
-    COIP finalization:
-      1) build retain basis Vret
-      2) build person/category basis Vperson
-      3) residualize target dirs against retain + person
-      4) build identity-residual union basis U_union
-      5) build anchor basis orthogonal to identity basis
-    """
+def flux_finalize_cora_bases(*, retain_top_k: int = 6, eps: float = 1e-8):
     global _FLUX_VRET_DUAL, _FLUX_VRET_SINGLE
-    global _FLUX_VPERSON_DUAL, _FLUX_VPERSON_SINGLE
     global _FLUX_U_UNION_DUAL, _FLUX_U_UNION_SINGLE
     global _FLUX_A_UNION_DUAL, _FLUX_A_UNION_SINGLE
     global _FLUX_U_DUAL, _FLUX_U_SINGLE, _FLUX_A_DUAL, _FLUX_A_SINGLE
-
     _FLUX_VRET_DUAL.clear()
     _FLUX_VRET_SINGLE.clear()
-
-    _FLUX_VPERSON_DUAL.clear()
-    _FLUX_VPERSON_SINGLE.clear()
-
     _FLUX_U_DUAL.clear()
     _FLUX_U_SINGLE.clear()
     _FLUX_A_DUAL.clear()
     _FLUX_A_SINGLE.clear()
-
     _FLUX_U_UNION_DUAL.clear()
     _FLUX_U_UNION_SINGLE.clear()
-
     _FLUX_A_UNION_DUAL.clear()
     _FLUX_A_UNION_SINGLE.clear()
-
-    # ------------------------------------------------------------
-    # 1) Retain bases
-    # ------------------------------------------------------------
     for blk, vlist in _FLUX_RETAIN_VT_BANK_DUAL.items():
         Vret = _retain_basis_from_vt_list(vlist, top_k=retain_top_k)
-        if Vret is not None:
-            _FLUX_VRET_DUAL[blk] = Vret
-
+        if Vret is not None: _FLUX_VRET_DUAL[blk] = Vret
     for blk, vlist in _FLUX_RETAIN_VT_BANK_SINGLE.items():
         Vret = _retain_basis_from_vt_list(vlist, top_k=retain_top_k)
-        if Vret is not None:
-            _FLUX_VRET_SINGLE[blk] = Vret
-
-    # ------------------------------------------------------------
-    # 2) Person/category bases
-    # ------------------------------------------------------------
-    for blk, vlist in _FLUX_PERSON_VT_BANK_DUAL.items():
-        Vperson = _basis_from_vt_list(vlist, top_k=person_top_k, eps=eps)
-        if Vperson is not None:
-            _FLUX_VPERSON_DUAL[blk] = Vperson
-
-    for blk, vlist in _FLUX_PERSON_VT_BANK_SINGLE.items():
-        Vperson = _basis_from_vt_list(vlist, top_k=person_top_k, eps=eps)
-        if Vperson is not None:
-            _FLUX_VPERSON_SINGLE[blk] = Vperson
-
+        if Vret is not None:  _FLUX_VRET_SINGLE[blk] = Vret
     def free_dir(d: torch.Tensor, Vret: Optional[torch.Tensor]) -> torch.Tensor:
-        if Vret is None or Vret.numel() == 0 or Vret.shape[1] == 0:
-            return d
+        if Vret is None or Vret.numel() == 0 or Vret.shape[1] == 0: return d
         proj = Vret @ (Vret.t() @ d)
         return d - _FLUX_RETAIN_LAMBDA * proj
-
-    # ------------------------------------------------------------
-    # 3) Build COIP identity-residual union basis
-    # ------------------------------------------------------------
-    def build_identity_union_U(
+    def build_union_U(
         target_bank: Dict[int, Dict[str, List[torch.Tensor]]],
         Vret_bank: Dict[int, torch.Tensor],
-        Vperson_bank: Dict[int, torch.Tensor],
     ) -> Dict[int, torch.Tensor]:
         out: Dict[int, torch.Tensor] = {}
-
         for blk, concept_map in target_bank.items():
             Vret = Vret_bank.get(blk, None)
-            Vperson = Vperson_bank.get(blk, None)
-
             dirs: List[torch.Tensor] = []
-
-            for concept, vt_list in concept_map.items():
-                concept_dirs: List[torch.Tensor] = []
-
+            for _, vt_list in concept_map.items():
                 for vt in vt_list:
                     d = _vt_to_dir(vt, eps=eps)
-
-                    # retain-aware freeing
                     d = free_dir(d, Vret)
-
-                    # COIP step: remove shared person/category component
-                    d = _remove_subspace_component(d, Vperson, eps=eps)
-
-                    if d.norm() <= eps:
-                        continue
-
+                    if d.norm() <= eps: continue
                     d = d / (d.norm() + eps)
                     dirs.append(d)
-                    concept_dirs.append(d)
-
-                if len(concept_dirs) > 0:
-                    M_concept = torch.stack(concept_dirs, dim=1)
-                    if blk not in _FLUX_U_DUAL and target_bank is _FLUX_TARGET_VT_BANK_DUAL:
-                        _FLUX_U_DUAL[blk] = {}
-                    if blk not in _FLUX_U_SINGLE and target_bank is _FLUX_TARGET_VT_BANK_SINGLE:
-                        _FLUX_U_SINGLE[blk] = {}
-
-                    concept_basis = _orth_columns(M_concept, eps=eps)
-                    if target_bank is _FLUX_TARGET_VT_BANK_DUAL:
-                        _FLUX_U_DUAL[blk][concept] = concept_basis
-                    else:
-                        _FLUX_U_SINGLE[blk][concept] = concept_basis
-
-            if len(dirs) == 0:
-                continue
-
+            if len(dirs) == 0: continue
             M = torch.stack(dirs, dim=1)
             out[blk] = _orth_columns(M, eps=eps)
-
         return out
-
-    _FLUX_U_UNION_DUAL.update(
-        build_identity_union_U(_FLUX_TARGET_VT_BANK_DUAL, _FLUX_VRET_DUAL, _FLUX_VPERSON_DUAL)
-    )
-    _FLUX_U_UNION_SINGLE.update(
-        build_identity_union_U(_FLUX_TARGET_VT_BANK_SINGLE, _FLUX_VRET_SINGLE, _FLUX_VPERSON_SINGLE)
-    )
-
-    # ------------------------------------------------------------
-    # 4) Build anchor basis orthogonal to COIP identity basis
-    # ------------------------------------------------------------
+    _FLUX_U_UNION_DUAL.update(build_union_U(_FLUX_TARGET_VT_BANK_DUAL, _FLUX_VRET_DUAL))
+    _FLUX_U_UNION_SINGLE.update(build_union_U(_FLUX_TARGET_VT_BANK_SINGLE, _FLUX_VRET_SINGLE))
     def build_union_A_once(
         anchor_once_bank: Dict[int, List[torch.Tensor]],
         Vret_bank: Dict[int, torch.Tensor],
-        Vperson_bank: Dict[int, torch.Tensor],
         U_union_bank: Dict[int, torch.Tensor],
     ) -> Dict[int, torch.Tensor]:
         out: Dict[int, torch.Tensor] = {}
-
         for blk, vt_list in anchor_once_bank.items():
             Vret = Vret_bank.get(blk, None)
-            Vperson = Vperson_bank.get(blk, None)
             Uu = U_union_bank.get(blk, None)
-
             dirs: List[torch.Tensor] = []
-
             for vt in vt_list:
                 a = _vt_to_dir(vt, eps=eps)
                 a = free_dir(a, Vret)
-                a = _remove_subspace_component(a, Vperson, eps=eps)
                 a = _remove_subspace_component(a, Uu, eps=eps)
-
-                if a.norm() <= eps:
-                    continue
-
+                if a.norm() <= eps: continue
                 a = a / (a.norm() + eps)
                 dirs.append(a)
-
-            if len(dirs) == 0:
-                continue
-
+            if len(dirs) == 0: continue
             M = torch.stack(dirs, dim=1)
             out[blk] = _orth_columns(M, eps=eps)
-
         return out
-
-    _FLUX_A_UNION_DUAL.update(
-        build_union_A_once(
-            _FLUX_ANCHOR_VT_BANK_DUAL_ONCE,
-            _FLUX_VRET_DUAL,
-            _FLUX_VPERSON_DUAL,
-            _FLUX_U_UNION_DUAL,
-        )
-    )
-    _FLUX_A_UNION_SINGLE.update(
-        build_union_A_once(
-            _FLUX_ANCHOR_VT_BANK_SINGLE_ONCE,
-            _FLUX_VRET_SINGLE,
-            _FLUX_VPERSON_SINGLE,
-            _FLUX_U_UNION_SINGLE,
-        )
-    )
+    _FLUX_A_UNION_DUAL.update(build_union_A_once(_FLUX_ANCHOR_VT_BANK_DUAL_ONCE, _FLUX_VRET_DUAL, _FLUX_U_UNION_DUAL))
+    _FLUX_A_UNION_SINGLE.update(build_union_A_once(_FLUX_ANCHOR_VT_BANK_SINGLE_ONCE, _FLUX_VRET_SINGLE, _FLUX_U_UNION_SINGLE))
 
 def _get_projections(attn: "FluxAttention", hidden_states, encoder_hidden_states=None):
     query = attn.to_q(hidden_states)
@@ -533,13 +336,11 @@ def _get_projections(attn: "FluxAttention", hidden_states, encoder_hidden_states
 def _get_fused_projections(attn: "FluxAttention", hidden_states, encoder_hidden_states=None):
     query, key, value = attn.to_qkv(hidden_states).chunk(3, dim=-1)
     encoder_query = encoder_key = encoder_value = None
-    if encoder_hidden_states is not None and hasattr(attn, "to_added_qkv"):
-        encoder_query, encoder_key, encoder_value = attn.to_added_qkv(encoder_hidden_states).chunk(3, dim=-1)
+    if encoder_hidden_states is not None and hasattr(attn, "to_added_qkv"): encoder_query, encoder_key, encoder_value = attn.to_added_qkv(encoder_hidden_states).chunk(3, dim=-1)
     return query, key, value, encoder_query, encoder_key, encoder_value
 
 def _get_qkv_projections(attn: "FluxAttention", hidden_states, encoder_hidden_states=None):
-    if attn.fused_projections:
-        return _get_fused_projections(attn, hidden_states, encoder_hidden_states)
+    if attn.fused_projections: return _get_fused_projections(attn, hidden_states, encoder_hidden_states)
     return _get_projections(attn, hidden_states, encoder_hidden_states)
 
 class FluxAttnProcessor:
@@ -562,8 +363,7 @@ class FluxAttnProcessor:
         text_seq_len: Optional[int] = None,
         record_target_vt: bool = False,
         record_retain_vt: bool = False,
-        record_person_vt: bool = False,      # NEW for COIP
-        record_anchor_once: bool = False,
+        record_anchor_once: bool = False,    # NEW: single anchor recording (no record_concept)
         apply_target_proj: bool = False,
         strength_tau: float = 0.2,
         strength_gamma: float = 1.0,
@@ -577,7 +377,6 @@ class FluxAttnProcessor:
         vt_dedup_cos_thr: float = _VT_DEDUP_COS_THR,
         max_target_vt_per_block: int = 32,
         max_retain_vt_per_block: int = 32,
-        max_person_vt_per_block: int = 64,   # NEW for COIP
         max_anchor_vt_per_block: int = 32,
         proj_token_end: Optional[int] = None,
         detector_token_end: Optional[int] = None,
@@ -585,38 +384,22 @@ class FluxAttnProcessor:
         query, key, value, encoder_query, encoder_key, encoder_value = _get_qkv_projections(
             attn, hidden_states, encoder_hidden_states
         )
-
         query = query.unflatten(-1, (attn.heads, -1))
         key = key.unflatten(-1, (attn.heads, -1))
         value = value.unflatten(-1, (attn.heads, -1))
-
         query = attn.norm_q(query)
         key = attn.norm_k(key)
-
-        # ------------------------------------------------------------
-        # Single blocks
-        # ------------------------------------------------------------
         if encoder_hidden_states is None and text_seq_len is not None and block_index is not None:
             target_single_block_indices = target_single_block_indices or []
-
             if single_zero_text_value:
                 value[:, :text_seq_len] = 0.0
-
-            if (record_retain_vt or record_person_vt or record_target_vt or record_anchor_once) and (
+            if (record_retain_vt or record_target_vt or record_anchor_once) and (
                 block_index in target_single_block_indices
             ):
                 vt_single = value[:, :text_seq_len].detach()[:1].contiguous()
                 q_txt = query[:, :text_seq_len].detach()[:1].contiguous()
                 k_txt = key[:, :text_seq_len].detach()[:1].contiguous()
-
-                vt_single = _make_attn_eos_duplicated_vt(
-                    vt_single,
-                    q_txt,
-                    k_txt,
-                    attn_mode="col",
-                    token_end=detector_token_end,
-                )
-
+                vt_single = _make_attn_eos_duplicated_vt(vt_single, q_txt, k_txt, attn_mode="col",token_end=detector_token_end,)
                 if record_retain_vt:
                     _bank_add_vt(
                         _FLUX_RETAIN_VT_BANK_SINGLE,
@@ -625,16 +408,6 @@ class FluxAttnProcessor:
                         max_keep=max_retain_vt_per_block,
                         dedup_thr=vt_dedup_cos_thr,
                     )
-
-                if record_person_vt:
-                    _bank_add_vt(
-                        _FLUX_PERSON_VT_BANK_SINGLE,
-                        block_index,
-                        vt_single,
-                        max_keep=max_person_vt_per_block,
-                        dedup_thr=vt_dedup_cos_thr,
-                    )
-
                 if record_target_vt:
                     if not record_concept:
                         raise ValueError("record_target_vt=True requires joint_attention_kwargs['record_concept']")
@@ -646,7 +419,6 @@ class FluxAttnProcessor:
                         max_keep=max_target_vt_per_block,
                         dedup_thr=vt_dedup_cos_thr,
                     )
-
                 if record_anchor_once:
                     _bank_add_anchor_once_vt(
                         _FLUX_ANCHOR_VT_BANK_SINGLE_ONCE,
@@ -655,24 +427,19 @@ class FluxAttnProcessor:
                         max_keep=max_anchor_vt_per_block,
                         dedup_thr=vt_dedup_cos_thr,
                     )
-
             if apply_target_proj and (block_index in target_single_block_indices):
                 s = 0
                 e = int(text_seq_len if proj_token_end is None else max(1, min(int(proj_token_end), text_seq_len)))
-
                 v_txt = value[:, :text_seq_len].reshape(value.shape[0], text_seq_len, -1)
                 v_slice = v_txt[:, s:e, :]
-
                 Vret = _FLUX_VRET_SINGLE.get(block_index, None)
-                U = _FLUX_U_UNION_SINGLE.get(block_index, None)   # COIP identity-residual basis
+                U = _FLUX_U_UNION_SINGLE.get(block_index, None)
                 A = _FLUX_A_UNION_SINGLE.get(block_index, None) if use_anchors else None
                 use_replace = bool(use_anchors and (A is not None))
-
                 if U is not None and U.numel() > 0 and U.shape[1] > 0:
                     U = U.to(device=v_slice.device, dtype=torch.float32)
                     A = None if A is None else A.to(device=v_slice.device, dtype=torch.float32)
                     Vret = None if Vret is None else Vret.to(device=v_slice.device, dtype=torch.float32)
-
                     v_slice2 = _cora_erase_replace(
                         v_slice,
                         Vret=Vret,
@@ -684,39 +451,23 @@ class FluxAttnProcessor:
                         eps=float(proj_eps),
                         use_replace=use_replace,
                     )
-
                     v_txt = torch.cat([v_txt[:, :s, :], v_slice2, v_txt[:, e:, :]], dim=1)
                     value_txt_new = v_txt.view(value.shape[0], text_seq_len, value.shape[2], value.shape[3])
                     value[:, :text_seq_len] = torch.nan_to_num(value_txt_new, nan=0.0, posinf=0.0, neginf=0.0)
-
-        # ------------------------------------------------------------
-        # Dual blocks
-        # ------------------------------------------------------------
         if attn.added_kv_proj_dim is not None and encoder_hidden_states is not None and block_index is not None:
             encoder_query = encoder_query.unflatten(-1, (attn.heads, -1))
             encoder_key = encoder_key.unflatten(-1, (attn.heads, -1))
             encoder_value = encoder_value.unflatten(-1, (attn.heads, -1))
-
             encoder_query = attn.norm_added_q(encoder_query)
             encoder_key = attn.norm_added_k(encoder_key)
-
             target_block_indices = target_block_indices or []
-
-            if (record_retain_vt or record_person_vt or record_target_vt or record_anchor_once) and (
+            if (record_retain_vt or record_target_vt or record_anchor_once) and (
                 block_index in target_block_indices
             ):
                 vt_dual = encoder_value.detach()[:1].contiguous()
                 q_txt = encoder_query.detach()[:1].contiguous()
                 k_txt = encoder_key.detach()[:1].contiguous()
-
-                vt_dual = _make_attn_eos_duplicated_vt(
-                    vt_dual,
-                    q_txt,
-                    k_txt,
-                    attn_mode="col",
-                    token_end=detector_token_end,
-                )
-
+                vt_dual = _make_attn_eos_duplicated_vt(vt_dual, q_txt, k_txt, attn_mode="col",token_end=detector_token_end,)
                 if record_retain_vt:
                     _bank_add_vt(
                         _FLUX_RETAIN_VT_BANK_DUAL,
@@ -725,16 +476,6 @@ class FluxAttnProcessor:
                         max_keep=max_retain_vt_per_block,
                         dedup_thr=vt_dedup_cos_thr,
                     )
-
-                if record_person_vt:
-                    _bank_add_vt(
-                        _FLUX_PERSON_VT_BANK_DUAL,
-                        block_index,
-                        vt_dual,
-                        max_keep=max_person_vt_per_block,
-                        dedup_thr=vt_dedup_cos_thr,
-                    )
-
                 if record_target_vt:
                     if not record_concept:
                         raise ValueError("record_target_vt=True requires joint_attention_kwargs['record_concept']")
@@ -746,7 +487,6 @@ class FluxAttnProcessor:
                         max_keep=max_target_vt_per_block,
                         dedup_thr=vt_dedup_cos_thr,
                     )
-
                 if record_anchor_once:
                     _bank_add_anchor_once_vt(
                         _FLUX_ANCHOR_VT_BANK_DUAL_ONCE,
@@ -755,24 +495,19 @@ class FluxAttnProcessor:
                         max_keep=max_anchor_vt_per_block,
                         dedup_thr=vt_dedup_cos_thr,
                     )
-
             if apply_target_proj and (block_index in target_block_indices):
                 v = encoder_value.reshape(encoder_value.shape[0], encoder_value.shape[1], -1)
-
                 s = 0
                 e = int(v.shape[1] if proj_token_end is None else max(1, min(int(proj_token_end), v.shape[1])))
                 v_slice = v[:, s:e, :]
-
                 Vret = _FLUX_VRET_DUAL.get(block_index, None)
-                U = _FLUX_U_UNION_DUAL.get(block_index, None)     # COIP identity-residual basis
+                U = _FLUX_U_UNION_DUAL.get(block_index, None)
                 A = _FLUX_A_UNION_DUAL.get(block_index, None) if use_anchors else None
                 use_replace = bool(use_anchors and (A is not None))
-
                 if U is not None and U.numel() > 0 and U.shape[1] > 0:
                     U = U.to(device=v_slice.device, dtype=torch.float32)
                     A = None if A is None else A.to(device=v_slice.device, dtype=torch.float32)
                     Vret = None if Vret is None else Vret.to(device=v_slice.device, dtype=torch.float32)
-
                     v_slice2 = _cora_erase_replace(
                         v_slice,
                         Vret=Vret,
@@ -784,22 +519,16 @@ class FluxAttnProcessor:
                         eps=float(proj_eps),
                         use_replace=use_replace,
                     )
-
                     v = torch.cat([v[:, :s, :], v_slice2, v[:, e:, :]], dim=1)
                     encoder_value = v.view_as(encoder_value)
                     encoder_value = torch.nan_to_num(encoder_value, nan=0.0, posinf=0.0, neginf=0.0)
-
-            if dual_zero_text_value:
-                encoder_value = encoder_value * 0.0
-
+            if dual_zero_text_value: encoder_value = encoder_value * 0.0
             query = torch.cat([encoder_query, query], dim=1)
             key = torch.cat([encoder_key, key], dim=1)
             value = torch.cat([encoder_value, value], dim=1)
-
         if image_rotary_emb is not None:
             query = apply_rotary_emb(query, image_rotary_emb, sequence_dim=1)
             key = apply_rotary_emb(key, image_rotary_emb, sequence_dim=1)
-
         hidden_states = dispatch_attention_fn(
             query,
             key,
@@ -808,9 +537,7 @@ class FluxAttnProcessor:
             backend=self._attention_backend,
             parallel_config=self._parallel_config,
         )
-
         hidden_states = hidden_states.flatten(2, 3).to(query.dtype)
-
         if encoder_hidden_states is not None:
             encoder_hidden_states, hidden_states = hidden_states.split_with_sizes(
                 [encoder_hidden_states.shape[1], hidden_states.shape[1] - encoder_hidden_states.shape[1]],
@@ -820,9 +547,8 @@ class FluxAttnProcessor:
             hidden_states = attn.to_out[1](hidden_states)
             encoder_hidden_states = attn.to_add_out(encoder_hidden_states)
             return hidden_states, encoder_hidden_states
-
         return hidden_states
-    
+
 class FluxAttention(torch.nn.Module, AttentionModuleMixin):
     _default_processor_cls = FluxAttnProcessor
     _available_processors = [FluxAttnProcessor]

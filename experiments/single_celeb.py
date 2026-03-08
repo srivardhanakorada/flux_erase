@@ -54,20 +54,20 @@ RETAINS: List[str] = [
     "Hillary Clinton",
     "Barack Obama"
 ]
+DUAL_BLOCKS = list(range(9, 19))
+SINGLE_BLOCKS = list(range(0, 10))
 ANCHOR = "A generic person"
-OUTDIR = "results/single_celeb"
-DUAL_BLOCKS = list(range(0, 19))
-SINGLE_BLOCKS = list(range(0, 38))
+OUTDIR = f"temp_{DUAL_BLOCKS[0]}_{DUAL_BLOCKS[-1]}_{SINGLE_BLOCKS[0]}_{SINGLE_BLOCKS[-1]}"
 STRENGTH_TAU = 0.1
-STRENGTH_GAMMA = 2.0
-ANCHOR_STRENGTH = 1.0
+STRENGTH_GAMMA = 1.5
+ANCHOR_STRENGTH = 1.5
 USE_ANCHORS = True
 H, W = 768, 768
 STEPS = 4
 GUIDANCE = 3.5
 N_IMAGES_PER_PROMPT = 1
 START_SEED = 0
-END_SEED = 24
+END_SEED = 0
 SEEDS = [i for i in range(START_SEED,END_SEED+1)]
 os.makedirs(OUTDIR, exist_ok=True)
 ###

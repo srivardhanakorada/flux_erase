@@ -4,13 +4,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch  # type: ignore
 
 
-def _flatten_dir_from_vt(vt: torch.Tensor, token_idx: int = 1, eps: float = 1e-8) -> torch.Tensor:
-    """
-    vt: [1, L, H, Dh]
-    returns d: [d] where d = H*Dh (flattened), unit-normalized
-    """
-    v = vt[0, token_idx].reshape(-1).to(torch.float32).contiguous()
-    return v / (v.norm() + eps)
+def _as_dir(d: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+    d = d.to(torch.float32).contiguous()
+    return d / (d.norm() + eps)
 
 
 def _stack_dirs(dirs: List[torch.Tensor]) -> torch.Tensor:
@@ -114,7 +110,7 @@ def _collect_block_dirs(
     for blk, cmap in target_bank.items():
         if concept not in cmap:
             continue
-        out[blk] = [_flatten_dir_from_vt(vt, token_idx=token_idx) for vt in cmap[concept]]
+        out[blk] = [_as_dir(d) for d in cmap[concept]]
     return out
 
 
