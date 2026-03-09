@@ -11,15 +11,15 @@ from diffusers.models.transformers.transformer_flux import (  # type: ignore
 MODEL_ID = "black-forest-labs/FLUX.1-schnell"
 PROMPT_TEMPLATES = [
     "a photo of {}",
-    "a high-quality portrait photo of {}",
-    "{}, studio portrait, sharp focus",
-    "{}, professional headshot",
-    "close-up photo of {}",
-    "cinematic portrait of {}",
-    "{} photographed in natural light",
-    "detailed facial photo of {}",
-    "{} photographed with DSLR",
-    "realistic photo of {}",
+    # "a high-quality portrait photo of {}",
+    # "{}, studio portrait, sharp focus",
+    # "{}, professional headshot",
+    # "close-up photo of {}",
+    # "cinematic portrait of {}",
+    # "{} photographed in natural light",
+    # "detailed facial photo of {}",
+    # "{} photographed with DSLR",
+    # "realistic photo of {}",
 ]
 RECORDING_TEMPLATES = [
     "a photo of {}",
@@ -30,12 +30,15 @@ TARGETS: List[str] = [
     "Donald Trump",
 ]
 RETAINS = [
-    "Barack Obama",
+    "Melania Trump",
+    "Hillary Clinton",
+    "Barack Obama"
 ]
 NON_TARGETS = [
-    "Hillary Clinton",
-    "Melania Trump",
-    "Barack Obama",
+    "Bill Clinton",
+    "Joe Biden",
+    "President of the United States of America",
+    "Husband of Melania Trump"
 ]
 PERSON_BANK = [
     "a portrait of a person",
@@ -46,9 +49,9 @@ PERSON_BANK = [
 ]
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
-OUTDIR = f"results_new/single_celeb"
+OUTDIR = f"temp"
 STRENGTH_TAU = 0.1
-STRENGTH_GAMMA = 1.5
+STRENGTH_GAMMA = 1.0
 ANCHOR_STRENGTH = 1.5
 USE_ANCHORS = True
 ANCHOR = "a portrait of a person"
@@ -60,7 +63,7 @@ STEPS = 4
 GUIDANCE = 3.5
 N_IMAGES_PER_PROMPT = 1
 START_SEED = 0
-END_SEED = 24
+END_SEED = 0
 SEEDS = [i for i in range(START_SEED, END_SEED + 1)]
 os.makedirs(OUTDIR, exist_ok=True)
 
