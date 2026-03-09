@@ -253,7 +253,7 @@ def _cora_erase_replace(
         # print("q_img argmax: ", q_img.argmax(dim=-2))
         for tok_j in range(q_img.shape[-1]):
             tok_attn = q_img[0,:,tok_j]
-            top_path_idx = tok_attn.topk(50).indices #zero out top 5 image tokens for each chosen text token
+            top_path_idx = tok_attn.topk(25).indices #zero out top 5 image tokens for each chosen text token
             v_img[:,top_path_idx,:] = 0
             q_img_idx.extend(top_path_idx)
         # q_img_max,q_img_idx = q_img.max(dim=-2)
@@ -657,12 +657,12 @@ class FluxAttnProcessor:
                     value[:, :text_seq_len] = torch.nan_to_num(value_txt_new, nan=0.0, posinf=0.0, neginf=0.0)
                     if(v_img is not None):
                         value[:,text_seq_len:] = torch.nan_to_num(value_img_new, nan=0.0, posinf=0.0, neginf=0.0)
-                    if(indx is not None):
-                        print("indx: ",indx)
-                        for i in indx:
-                            i+=text_seq_len
-                        print("indx: ",indx)
-                        print("printing zeros: ",value[:,indx])
+                    # if(indx is not None):
+                        # print("indx: ",indx)
+                        # for i in indx:
+                        #     i+=text_seq_len
+                        # print("indx: ",indx)
+                        # print("printing zeros: ",value[:,indx])
 
         # ===========================
         # Dual-stream blocks (encoder_hidden_states present)
@@ -759,7 +759,7 @@ class FluxAttnProcessor:
                     # print("v_img shape: ",v_img.shape)
                     q_slice = q_txt[:, s:e, :]
                     k_slice = k_txt[:, s:e, :]
-                    v_slice2,v_img_ret,indx = _cora_erase_replace(
+                    v_slice2,v_img,indx = _cora_erase_replace(
                         v_slice,
                         Vret=Vret,
                         U=U,
@@ -785,8 +785,8 @@ class FluxAttnProcessor:
                     encoder_value = torch.nan_to_num(encoder_value, nan=0.0, posinf=0.0, neginf=0.0)                    
                     if(v_img is not None):
                         value = torch.nan_to_num(v_img, nan=0.0, posinf=0.0, neginf=0.0)
-                    if(indx is not None):
-                        print("value zeros: ",value[:,indx])
+                    # if(indx is not None):
+                    #     print("value zeros: ",value[:,indx])
                     
             if dual_zero_text_value:
                 encoder_value = encoder_value * 0.0

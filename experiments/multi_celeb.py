@@ -41,6 +41,9 @@ PROMPT_TEMPLATES = [
     # "{} photographed with DSLR",
     # "realistic photo of {}",
 ]
+PROMPT_DUAL_TEMPLATES = [
+    "a photo of {} and {}",
+]
 RECORDING_TEMPLATES = [
     "a photo of {}",
     "{} photographed with DSLR",
@@ -63,7 +66,7 @@ RETAINS: List[str] = [
     "Justin Bieber",
 ]
 ANCHOR = "A generic person"
-OUTDIR = "results_mmdit/multi_celeb_without_img_edit"
+OUTDIR = "results_mmdit/multi_celeb_without_img_edit_localization"
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
 STRENGTH_TAU = 0.1
@@ -75,7 +78,7 @@ STEPS = 4
 GUIDANCE = 3.5
 N_IMAGES_PER_PROMPT = 1
 START_SEED = 0
-END_SEED = 24
+END_SEED = 9
 SEEDS = [i for i in range(START_SEED,END_SEED+1)]
 os.makedirs(OUTDIR, exist_ok=True)
 ###
@@ -143,6 +146,17 @@ def generate_images(pipe: FluxPipeline, items: List[str], templates: List[str]):
                 _save(base_img,os.path.join(before_path,file_name))
                 _save(edit_img,os.path.join(after_path,file_name))
         print(f"{item} DONE!")
+        
+def generate_images_dual(pipe: FluxPipeline, targets: List[str], retains: List[str], templates: List[str]):
+    for target in targets:
+        for retain in retains:
+            for template in templates:
+                prompt = template.format(target,retain)
+                for s in SEEDS:
+                    file_name = f"{_sanitize(f'{prompt}_{s}')}.png"
+                    img = run_one(pipe, prompt, apply_target_proj=True, seed=s)
+                    _save(img,os.path.join(OUTDIR,file_name))
+        print(f"{target} DONE!")
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     pipe = FluxPipeline.from_pretrained(MODEL_ID,torch_dtype=torch.bfloat16 if device == "cuda" else torch.float32,).to(device)
@@ -154,8 +168,9 @@ def main():
             run_one(pipe,prompt=prompt,record_target_vt=True,record_concept=t,seed=2000 + i,)
     run_one(pipe,prompt=ANCHOR,record_anchor_once=True,seed=3000,)
     flux_finalize_cora_bases()
-    generate_images(pipe, TARGETS,PROMPT_TEMPLATES)
-    generate_images(pipe, RETAINS,PROMPT_TEMPLATES)
+    # generate_images(pipe, TARGETS,PROMPT_TEMPLATES)
+    # generate_images(pipe, RETAINS,PROMPT_TEMPLATES)
+    generate_images_dual(pipe, TARGETS, RETAINS, PROMPT_DUAL_TEMPLATES)
     print(f"Done. Grids saved to: {OUTDIR}")
 if __name__ == "__main__": main()
 ###
