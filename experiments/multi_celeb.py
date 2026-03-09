@@ -63,7 +63,7 @@ RETAINS: List[str] = [
     "Justin Bieber",
 ]
 ANCHOR = "A generic person"
-OUTDIR = "temp"
+OUTDIR = "results_mmdit/multi_celeb_without_img_edit"
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
 STRENGTH_TAU = 0.1
@@ -75,7 +75,7 @@ STEPS = 4
 GUIDANCE = 3.5
 N_IMAGES_PER_PROMPT = 1
 START_SEED = 0
-END_SEED = 0
+END_SEED = 24
 SEEDS = [i for i in range(START_SEED,END_SEED+1)]
 os.makedirs(OUTDIR, exist_ok=True)
 ###

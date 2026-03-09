@@ -55,7 +55,7 @@ RETAINS: List[str] = [
     "Barack Obama"
 ]
 ANCHOR = "A generic person"
-OUTDIR = "results/single_celeb"
+OUTDIR = "results_mmdit/single_celeb"
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
 STRENGTH_TAU = 0.1
@@ -67,7 +67,7 @@ STEPS = 4
 GUIDANCE = 3.5
 N_IMAGES_PER_PROMPT = 1
 START_SEED = 0
-END_SEED = 24
+END_SEED = 0
 SEEDS = [i for i in range(START_SEED,END_SEED+1)]
 os.makedirs(OUTDIR, exist_ok=True)
 ###
@@ -128,6 +128,7 @@ def generate_images(pipe: FluxPipeline, items: List[str], templates: List[str]):
         os.makedirs(after_path,exist_ok=True)
         for prompt_template in templates:
             p = _make_prompt(item,prompt_template)
+            print(p)
             for s in SEEDS:
                 file_name = f"{_sanitize(f'{p}_{s}')}.png"
                 base_img = run_one(pipe, p, apply_target_proj=False, seed=s)
@@ -147,7 +148,7 @@ def main():
     run_one(pipe,prompt=ANCHOR,record_anchor_once=True,seed=3000,)
     flux_finalize_cora_bases()
     generate_images(pipe, TARGETS,PROMPT_TEMPLATES)
-    generate_images(pipe, RETAINS,PROMPT_TEMPLATES)
+    # generate_images(pipe, RETAINS,PROMPT_TEMPLATES)
     print(f"Done. Grids saved to: {OUTDIR}")
 if __name__ == "__main__": main()
 ###
