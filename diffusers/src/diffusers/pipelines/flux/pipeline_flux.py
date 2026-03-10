@@ -1,6 +1,5 @@
 import inspect
 from typing import Any, Callable, Dict, List, Optional, Union
-
 import numpy as np  # type: ignore
 import torch  # type: ignore
 from transformers import (  # type: ignore
@@ -11,7 +10,6 @@ from transformers import (  # type: ignore
     T5EncoderModel,
     T5TokenizerFast,
 )
-
 from ...image_processor import VaeImageProcessor
 from ...loaders import FluxIPAdapterMixin, FluxLoraLoaderMixin, FromSingleFileMixin, TextualInversionLoaderMixin
 from ...models import AutoencoderKL, FluxTransformer2DModel
@@ -136,6 +134,14 @@ class FluxPipeline(
     TextualInversionLoaderMixin,
     FluxIPAdapterMixin,
 ):
+    r"""
+    The Flux pipeline for text-to-image generation.
+    Reference: https://blackforestlabs.ai/announcing-black-forest-labs/
+    Args:
+        transformer ([`FluxTransformer2DModel`]):
+            Conditional Transformer (MMDiT) architecture to denoise the encoded image latents.
+    """
+
     model_cpu_offload_seq = "text_encoder->text_encoder_2->image_encoder->transformer->vae"
     _optional_components = ["image_encoder", "feature_extractor"]
     _callback_tensor_inputs = ["latents", "prompt_embeds"]
@@ -166,7 +172,11 @@ class FluxPipeline(
         )
         self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1) if getattr(self, "vae", None) else 8
         self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor * 2)
-        self.tokenizer_max_length = self.tokenizer.model_max_length if hasattr(self, "tokenizer") and self.tokenizer is not None else 77
+        self.tokenizer_max_length = (
+            self.tokenizer.model_max_length
+            if hasattr(self, "tokenizer") and self.tokenizer is not None
+            else 77
+        )
         self.default_sample_size = 128
 
     def _get_t5_prompt_embeds(
@@ -379,7 +389,9 @@ class FluxPipeline(
             )
 
         if prompt_embeds is not None and pooled_prompt_embeds is None:
-            raise ValueError("If `prompt_embeds` are provided, `pooled_prompt_embeds` also have to be passed.")
+            raise ValueError(
+                "If `prompt_embeds` are provided, `pooled_prompt_embeds` also have to be passed."
+            )
         if negative_prompt_embeds is not None and negative_pooled_prompt_embeds is None:
             raise ValueError(
                 "If `negative_prompt_embeds` are provided, `negative_pooled_prompt_embeds` also have to be passed."
@@ -394,7 +406,9 @@ class FluxPipeline(
         latent_image_ids[..., 1] = latent_image_ids[..., 1] + torch.arange(height)[:, None]
         latent_image_ids[..., 2] = latent_image_ids[..., 2] + torch.arange(width)[None, :]
         latent_image_id_height, latent_image_id_width, latent_image_id_channels = latent_image_ids.shape
-        latent_image_ids = latent_image_ids.reshape(latent_image_id_height * latent_image_id_width, latent_image_id_channels)
+        latent_image_ids = latent_image_ids.reshape(
+            latent_image_id_height * latent_image_id_width, latent_image_id_channels
+        )
         return latent_image_ids.to(device=device, dtype=dtype)
 
     @staticmethod
@@ -523,6 +537,8 @@ class FluxPipeline(
         max_sequence_length: int = 512,
         disable_clip: bool = False,
         finalize_cora_bases: bool = False,
+        cora_retain_top_k: int = 3,
+        cora_person_top_k: int = 4,
     ):
         height = height or self.default_sample_size * self.vae_scale_factor
         width = width or self.default_sample_size * self.vae_scale_factor
@@ -569,12 +585,15 @@ class FluxPipeline(
             disable_clip=disable_clip,
         )
 
+        # Detector span from T5 prompt
         T5L = int(prompt_embeds.shape[1])
         t5_prompt = prompt_2 if (prompt_2 is not None) else prompt
         t5_eos = _first_eos_pos(self.tokenizer_2, t5_prompt, max_len=max_sequence_length)
-        det_end = int(max(1, min(t5_eos, T5L)))
+        proj_end_t5 = int(max(1, min(t5_eos, T5L)))
+        det_end = int(max(1, proj_end_t5 - 1))
         self._joint_attention_kwargs["detector_token_end"] = det_end
 
+        # Projection span uses CLIP eos, clamped by T5 length
         clip_prompt = prompt
         if disable_clip:
             clip_prompt = prompt_2 if (prompt_2 is not None) else prompt
@@ -671,7 +690,9 @@ class FluxPipeline(
                     latents = callback_outputs.pop("latents", latents)
                     prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
 
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+                if i == len(timesteps) - 1 or (
+                    (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0
+                ):
                     progress_bar.update()
 
         self._current_timestep = None
@@ -683,12 +704,16 @@ class FluxPipeline(
                 is_recording = (
                     bool(self._joint_attention_kwargs.get("record_target_vt", False))
                     or bool(self._joint_attention_kwargs.get("record_retain_vt", False))
-                    or bool(self._joint_attention_kwargs.get("record_anchor_vt", False))
+                    or bool(self._joint_attention_kwargs.get("record_person_vt", False))
+                    or bool(self._joint_attention_kwargs.get("record_anchor_once", False))
                 )
                 is_applying = bool(self._joint_attention_kwargs.get("apply_target_proj", False))
 
                 if is_recording and (not is_applying):
-                    flux_finalize_cora_bases()
+                    flux_finalize_cora_bases(
+                        retain_top_k=int(cora_retain_top_k),
+                        person_top_k=int(cora_person_top_k),
+                    )
             except Exception as e:
                 logger.warning(f"finalize_cora_bases=True but flux_finalize_cora_bases failed: {e}")
 

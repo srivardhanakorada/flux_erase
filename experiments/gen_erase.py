@@ -1,12 +1,17 @@
 import os
-from typing import List, Optional
+from typing import Dict, List, Optional
 
+import matplotlib.pyplot as plt  # type: ignore
+import numpy as np  # type: ignore
 import torch  # type: ignore
 from PIL import Image  # type: ignore
+
 from diffusers import FluxPipeline
 from diffusers.models.transformers.transformer_flux import (  # type: ignore
-    flux_reset_vt_banks,
     flux_finalize_cora_bases,
+    flux_get_diag_stats,
+    flux_reset_diag_stats,
+    flux_reset_vt_banks,
 )
 
 import diffusers.models.transformers.transformer_flux as tf
@@ -16,16 +21,19 @@ print("FluxAttnProcessor args:", tf.inspect.signature(tf.FluxAttnProcessor.__cal
 
 MODEL_ID = "black-forest-labs/FLUX.1-schnell"
 
-# Prompts used for final generation/evaluation
+# ============================================================
+# Prompts
+# ============================================================
 PROMPT_TEMPLATES = [
     "a photo of {}",
 ]
 
-# Prompts used while recording target/retain concepts
 RECORDING_TEMPLATES = [
     "a photo of {}",
-    # "{} photographed with DSLR",
-    # "{}, studio portrait, sharp focus",
+    "{} photographed with DSLR",
+    "{}, studio portrait, sharp focus",
+    "professional portrait of {}",
+    "close-up photo of {}",
 ]
 
 TARGETS: List[str] = [
@@ -45,31 +53,48 @@ NON_TARGETS: List[str] = [
     "Husband of Melania Trump",
 ]
 
-# NOTE:
-# In the exact transformer you pasted, PERSON_BANK is NOT used because
-# FluxAttnProcessor does not support record_person_vt.
-# So keep this empty unless you later extend the transformer.
-PERSON_BANK: List[str] = []
+PROBE_PROMPTS: List[str] = [
+    "Donald Trump",
+    "a photo of Donald Trump",
+    "portrait of Donald Trump",
+    "President of the United States of America",
+    "Husband of Melania Trump",
+    "Melania Trump",
+    "Barack Obama",
+    "Hillary Clinton",
+    "Joe Biden",
+    "Bill Clinton",
+]
 
+# ============================================================
+# Block selection
+# ============================================================
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
 
-OUTDIR = "temp_generase"
+# Optional custom overrides. Leave empty to use transformer defaults.
+DUAL_BLOCK_EDIT_SCALE_MAP: Dict[int, float] = {}
+SINGLE_BLOCK_EDIT_SCALE_MAP: Dict[int, float] = {
+    # 34: 0.25,
+    # 35: 0.25,
+    # 36: 0.25,
+    # 37: 0.0,
+}
 
-# Main erasure control in your exact current setup
-STRENGTH_TAU = 0.10
+USE_DEFAULT_GENERALIZATION_PROFILE = False
 
-# Anchor replacement strength (used only if USE_ANCHORS=True)
-ANCHOR_STRENGTH = 1.5
+# ============================================================
+# Hyperparameters
+# ============================================================
+OUTDIR = "temp_generase_better_generalization"
+PLOT_DIR = os.path.join(OUTDIR, "plots")
+
+STRENGTH_TAU = 0.08
+ANCHOR_STRENGTH = 0.75
 USE_ANCHORS = True
 ANCHOR = "a portrait of a person"
 
-# These are not used by the exact token-wise GenErase finalize you showed,
-# but we keep them for compatibility if your local finalize signature changes later.
-PERSON_TOP_K = 2
-RETAIN_TOP_K = 4
-
-REC_H, REC_W = 256, 256
+REC_H, REC_W = 512, 512
 GEN_H, GEN_W = 512, 512
 
 STEPS = 4
@@ -78,16 +103,24 @@ N_IMAGES_PER_PROMPT = 1
 
 START_SEED = 0
 END_SEED = 0
-SEEDS = list(range(START_SEED, END_SEED + 1))
+SEEDS = [i for i in range(START_SEED, END_SEED + 1)]
+
+# finalize params for better target subspace construction
+MAX_RANK_PER_CONCEPT = 4 
+PCA_MIN_RATIO = 0.05
 
 os.makedirs(OUTDIR, exist_ok=True)
+os.makedirs(PLOT_DIR, exist_ok=True)
 
 
+# ============================================================
+# Utils
+# ============================================================
 def _save(img: Image.Image, path: str):
     img.save(path)
 
 
-def _sanitize(s: str, max_len: int = 160) -> str:
+def _sanitize(s: str, max_len: int = 120) -> str:
     s = s.strip().replace(" ", "_")
     return "".join(c for c in s if c.isalnum() or c in ("_", "-"))[:max_len]
 
@@ -101,21 +134,32 @@ def _maybe_clear_cache():
         torch.cuda.empty_cache()
 
 
-@torch.inference_mode()
+def _safe_mean(vals: List[float]) -> float:
+    if len(vals) == 0:
+        return 0.0
+    return float(np.mean(vals))
+
+
+# ============================================================
+# Core runner
+# ============================================================
+@torch.no_grad()
 def run_one(
     pipe: FluxPipeline,
     prompt: str,
     *,
-    device: torch.device,
     record_target_vt: bool = False,
     record_retain_vt: bool = False,
     record_anchor_vt: bool = False,
     apply_target_proj: bool = False,
+    probe_target_score: bool = False,
+    record_diag_stats: bool = False,
+    diag_stat_concept: Optional[str] = None,
     record_concept: Optional[str] = None,
     seed: int = 0,
     record_mode: bool = False,
 ):
-    g = torch.Generator(device=device).manual_seed(seed)
+    g = torch.Generator(device=pipe.device).manual_seed(seed)
 
     height = REC_H if record_mode else GEN_H
     width = REC_W if record_mode else GEN_W
@@ -127,15 +171,18 @@ def run_one(
         "record_anchor_vt": record_anchor_vt,
         "record_concept": record_concept,
         "apply_target_proj": apply_target_proj,
+        "probe_target_score": probe_target_score,
+        "record_diag_stats": record_diag_stats,
+        "diag_stat_concept": diag_stat_concept,
         "use_anchors": USE_ANCHORS,
+        "use_default_generalization_profile": USE_DEFAULT_GENERALIZATION_PROFILE,
+        "dual_block_edit_scale_map": DUAL_BLOCK_EDIT_SCALE_MAP,
+        "single_block_edit_scale_map": SINGLE_BLOCK_EDIT_SCALE_MAP,
         "target_block_indices": DUAL_BLOCKS,
         "target_single_block_indices": SINGLE_BLOCKS,
         "strength_tau": STRENGTH_TAU,
         "anchor_strength": ANCHOR_STRENGTH,
         "proj_eps": 1e-8,
-        "max_target_vt_per_block": 8,
-        "max_retain_vt_per_block": 8,
-        "max_anchor_vt_per_block": 4,
         "debug_tokens": False,
     }
 
@@ -158,58 +205,72 @@ def run_one(
     return out.images[0]
 
 
-def record_retain_bank(pipe: FluxPipeline, device: torch.device):
-    """
-    Record retains using the SAME template diversity as targets.
-    This is important for better preservation.
-    """
-    for i, retain in enumerate(RETAINS):
-        for j, template in enumerate(RECORDING_TEMPLATES):
-            prompt = template.format(retain)
-            run_one(
-                pipe,
-                prompt=prompt,
-                device=device,
-                record_retain_vt=True,
-                record_concept=retain,
-                seed=1000 + 100 * i + j,
-                record_mode=True,
-            )
+# ============================================================
+# Bank recording
+# ============================================================
+def record_retain_bank(pipe: FluxPipeline):
+    for i, rp in enumerate(RETAINS):
+        run_one(
+            pipe,
+            prompt=rp,
+            record_retain_vt=True,
+            record_concept=rp,
+            seed=1000 + i,
+            record_mode=True,
+        )
 
 
-def record_target_bank(pipe: FluxPipeline, device: torch.device):
-    for i, target in enumerate(TARGETS):
-        for j, template in enumerate(RECORDING_TEMPLATES):
-            prompt = template.format(target)
+def record_target_bank(pipe: FluxPipeline):
+    for i, t in enumerate(TARGETS):
+        for j, pt in enumerate(RECORDING_TEMPLATES):
             run_one(
                 pipe,
-                prompt=prompt,
-                device=device,
+                prompt=pt.format(t),
                 record_target_vt=True,
-                record_concept=target,
+                record_concept=t,
                 seed=3000 + 100 * i + j,
                 record_mode=True,
             )
 
 
-def record_anchor_bank(pipe: FluxPipeline, device: torch.device):
+def record_anchor_bank(pipe: FluxPipeline):
     if not USE_ANCHORS:
         return
 
-    # One anchor recording per target concept label
-    for i, target in enumerate(TARGETS):
+    for i, t in enumerate(TARGETS):
         run_one(
             pipe,
             prompt=ANCHOR,
-            device=device,
             record_anchor_vt=True,
-            record_concept=target,
+            record_concept=t,
             seed=4000 + i,
             record_mode=True,
         )
 
 
-def generate_images(pipe: FluxPipeline, device: torch.device, items: List[str], templates: List[str], split_name: str):
+# ============================================================
+# Diagnostics probing
+# ============================================================
+def probe_diags(pipe: FluxPipeline):
+    flux_reset_diag_stats()
+
+    for i, p in enumerate(PROBE_PROMPTS):
+        run_one(
+            pipe,
+            prompt=p,
+            apply_target_proj=False,
+            probe_target_score=True,
+            record_diag_stats=True,
+            diag_stat_concept=p,
+            seed=9000 + i,
+            record_mode=False,
+        )
+
+
+# ============================================================
+# Image generation
+# ============================================================
+def generate_images(pipe: FluxPipeline, items: List[str], templates: List[str], split_name: str):
     for item in items:
         before_path = os.path.join(OUTDIR, split_name, item, "before")
         after_path = os.path.join(OUTDIR, split_name, item, "after")
@@ -217,26 +278,12 @@ def generate_images(pipe: FluxPipeline, device: torch.device, items: List[str], 
         os.makedirs(after_path, exist_ok=True)
 
         for prompt_template in templates:
-            prompt = _make_prompt(item, prompt_template)
+            p = _make_prompt(item, prompt_template)
             for s in SEEDS:
-                file_name = f"{_sanitize(f'{prompt}_{s}')}.png"
+                file_name = f"{_sanitize(f'{p}_{s}')}.png"
 
-                base_img = run_one(
-                    pipe,
-                    prompt,
-                    device=device,
-                    apply_target_proj=False,
-                    seed=s,
-                    record_mode=False,
-                )
-                edit_img = run_one(
-                    pipe,
-                    prompt,
-                    device=device,
-                    apply_target_proj=True,
-                    seed=s,
-                    record_mode=False,
-                )
+                base_img = run_one(pipe, p, apply_target_proj=False, seed=s, record_mode=False)
+                edit_img = run_one(pipe, p, apply_target_proj=True, seed=s, record_mode=False)
 
                 _save(base_img, os.path.join(before_path, file_name))
                 _save(edit_img, os.path.join(after_path, file_name))
@@ -244,9 +291,110 @@ def generate_images(pipe: FluxPipeline, device: torch.device, items: List[str], 
         print(f"{split_name} :: {item} DONE!")
 
 
+# ============================================================
+# Plot helpers
+# ============================================================
+def _mean_scalar_curve(blk_map):
+    xs = sorted(blk_map.keys())
+    ys = [_safe_mean(blk_map[b]) for b in xs]
+    return xs, ys
+
+
+def _mean_token_matrix(blk_map):
+    xs = sorted(blk_map.keys())
+    if len(xs) == 0:
+        return xs, np.zeros((0, 0), dtype=np.float32)
+
+    max_tok = 0
+    for b in xs:
+        for arr in blk_map[b]:
+            max_tok = max(max_tok, len(arr))
+
+    M = np.full((len(xs), max_tok), np.nan, dtype=np.float32)
+    for i, b in enumerate(xs):
+        rows = blk_map[b]
+        if len(rows) == 0:
+            continue
+
+        tmp = []
+        for arr in rows:
+            a = np.full((max_tok,), np.nan, dtype=np.float32)
+            a[: len(arr)] = np.array(arr, dtype=np.float32)
+            tmp.append(a)
+
+        M[i] = np.nanmean(np.stack(tmp, axis=0), axis=0)
+
+    return xs, M
+
+
+def plot_diag_curves():
+    stats = flux_get_diag_stats()
+
+    for stream_name in ["dual", "single"]:
+        for diag_name, bank in stats["scalar"][stream_name].items():
+            if len(bank) == 0:
+                continue
+
+            plt.figure(figsize=(10, 6))
+            for concept, blk_map in bank.items():
+                if len(blk_map) == 0:
+                    continue
+                xs, ys = _mean_scalar_curve(blk_map)
+                plt.plot(xs, ys, marker="o", label=concept)
+
+            plt.xlabel("Block index")
+            plt.ylabel(diag_name)
+            plt.title(f"{stream_name}_{diag_name} (tau={STRENGTH_TAU})")
+            plt.grid(True, alpha=0.25)
+            plt.legend(fontsize=8)
+            plt.tight_layout()
+            plt.savefig(os.path.join(PLOT_DIR, f"{stream_name}_{diag_name}.png"), dpi=180)
+            plt.close()
+
+    for stream_name in ["dual", "single"]:
+        for diag_name, bank in stats["token"][stream_name].items():
+            if len(bank) == 0:
+                continue
+
+            for concept, blk_map in bank.items():
+                xs, M = _mean_token_matrix(blk_map)
+                if M.size == 0:
+                    continue
+
+                plt.figure(figsize=(10, 5))
+                plt.imshow(M, aspect="auto", interpolation="nearest")
+                plt.colorbar(label=diag_name)
+                plt.xlabel("Token index")
+                plt.ylabel("Block row")
+                plt.title(f"{stream_name}_{diag_name} :: {concept}")
+                plt.yticks(range(len(xs)), xs)
+                plt.tight_layout()
+                fname = f"{stream_name}_{diag_name}_{_sanitize(concept)}.png"
+                plt.savefig(os.path.join(PLOT_DIR, fname), dpi=180)
+                plt.close()
+
+
+def save_diag_summary_txt():
+    stats = flux_get_diag_stats()
+    outpath = os.path.join(PLOT_DIR, "diag_summary.txt")
+
+    with open(outpath, "w", encoding="utf-8") as f:
+        for stream_name in ["dual", "single"]:
+            for diag_name, bank in stats["scalar"][stream_name].items():
+                f.write(f"\n===== {stream_name}_{diag_name} =====\n")
+                for concept, blk_map in bank.items():
+                    xs, ys = _mean_scalar_curve(blk_map)
+                    f.write(f"\n{concept}\n")
+                    for x, y in zip(xs, ys):
+                        f.write(f"  block {x:02d} : {y:.6f}\n")
+
+
+# ============================================================
+# Main
+# ============================================================
 def main():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.bfloat16 if device == "cuda" else torch.float32
 
     pipe = FluxPipeline.from_pretrained(
         MODEL_ID,
@@ -256,40 +404,31 @@ def main():
     flux_reset_vt_banks(reset_retain=True)
     _maybe_clear_cache()
 
-    # 1) Record retain bank
-    record_retain_bank(pipe, device)
+    # 1) Record banks
+    record_retain_bank(pipe)
+    record_target_bank(pipe)
+    record_anchor_bank(pipe)
+
+    # 2) Finalize improved target subspaces
+    flux_finalize_cora_bases(
+        max_rank_per_concept=MAX_RANK_PER_CONCEPT,
+        pca_min_ratio=PCA_MIN_RATIO,
+    )
     _maybe_clear_cache()
 
-    # 2) PERSON_BANK is not used in the exact transformer you pasted.
-    #    So we intentionally skip it here.
-
-    # 3) Record target bank
-    record_target_bank(pipe, device)
+    # 3) Probe diagnostics without editing
+    probe_diags(pipe)
+    plot_diag_curves()
+    save_diag_summary_txt()
     _maybe_clear_cache()
 
-    # 4) Record anchor bank
-    record_anchor_bank(pipe, device)
-    _maybe_clear_cache()
-
-    # 5) Finalize token-wise bases/projectors
-    try:
-        # For older/custom variants
-        flux_finalize_cora_bases(
-            retain_top_k=RETAIN_TOP_K,
-            person_top_k=PERSON_TOP_K,
-        )
-    except TypeError:
-        # For the exact GenErase-style transformer you pasted
-        flux_finalize_cora_bases()
-
-    _maybe_clear_cache()
-
-    # 6) Generate
-    generate_images(pipe, device, TARGETS, PROMPT_TEMPLATES, split_name="targets")
-    generate_images(pipe, device, RETAINS, PROMPT_TEMPLATES, split_name="retains")
-    generate_images(pipe, device, NON_TARGETS, PROMPT_TEMPLATES, split_name="non_targets")
+    # 4) Generate comparisons
+    generate_images(pipe, TARGETS, PROMPT_TEMPLATES, split_name="targets")
+    generate_images(pipe, RETAINS, PROMPT_TEMPLATES, split_name="retains")
+    generate_images(pipe, NON_TARGETS, PROMPT_TEMPLATES, split_name="non_targets")
 
     print(f"Done. Results saved to: {OUTDIR}")
+    print(f"Plots saved to: {PLOT_DIR}")
 
 
 if __name__ == "__main__":

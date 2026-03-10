@@ -35,14 +35,18 @@ RETAINS = [
     "Barack Obama",
     "Brad Pitt",
     "Tom Cruise",
-]
-NON_TARGETS = [
     "Melania Trump",
     "Hillary Clinton",
     "Angelina Jolie",
     "Ed Sheeran",
     "Taylor Swift",
     "Justin Bieber",
+]
+NON_TARGETS = [
+    "Bill Clinton",
+    "Joe Biden",
+    "President of the United States of America",
+    "Husband of Melania Trump"
 ]
 PERSON_BANK = [
     "a portrait of a person",
@@ -52,22 +56,27 @@ PERSON_BANK = [
     "a middle-aged woman",
 ]
 DUAL_BLOCKS = list(range(0, 19))
+DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
-OUTDIR =  f"results_new/multi_celeb"
-STRENGTH_TAU = 0.1
-STRENGTH_GAMMA = 1.35
+OUTDIR = f"temp_multi"
 ANCHOR_STRENGTH = 1.5
-USE_ANCHORS = True
-ANCHOR = "a portrait of a person"
-PERSON_TOP_K = 2
+USE_ANCHORS = False
+STRENGTH_TAU = 0.02
+STRENGTH_GAMMA = 1.25
+PERSON_WEIGHT = 0.35
+GATE_SHARPNESS = 16.0
+USE_SOFT_GATE = True
+PERSON_REMOVE_SCALE = 0.5
 RETAIN_TOP_K = 4
+PERSON_TOP_K = 6
+ANCHOR = "a portrait of a person"
 REC_H, REC_W = 512, 512
 GEN_H, GEN_W = 512, 512
 STEPS = 4
 GUIDANCE = 3.5
 N_IMAGES_PER_PROMPT = 1
 START_SEED = 0
-END_SEED = 24
+END_SEED = 0
 SEEDS = [i for i in range(START_SEED, END_SEED + 1)]
 os.makedirs(OUTDIR, exist_ok=True)
 
@@ -80,8 +89,7 @@ def _sanitize(s: str, max_len: int = 120) -> str:
 def _make_prompt(x: str, prompt_template: str) -> str: return prompt_template.format(x)
 
 def _maybe_clear_cache():
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if torch.cuda.is_available(): torch.cuda.empty_cache()
 
 @torch.no_grad()
 def run_one(
@@ -116,6 +124,9 @@ def run_one(
         "anchor_strength": ANCHOR_STRENGTH,
         "proj_eps": 1e-8,
         "debug_tokens": False,
+        "person_weight": PERSON_WEIGHT,
+        "gate_sharpness": GATE_SHARPNESS,
+        "use_soft_gate": USE_SOFT_GATE,
     }
     out = pipe(
         prompt=prompt,
@@ -196,6 +207,7 @@ def main():
     flux_finalize_cora_bases(
         retain_top_k=RETAIN_TOP_K,
         person_top_k=PERSON_TOP_K,
+        person_remove_scale=PERSON_REMOVE_SCALE,
     )
     _maybe_clear_cache()
     generate_images(pipe, TARGETS, PROMPT_TEMPLATES, split_name="targets")

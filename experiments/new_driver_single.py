@@ -11,15 +11,15 @@ from diffusers.models.transformers.transformer_flux import (  # type: ignore
 MODEL_ID = "black-forest-labs/FLUX.1-schnell"
 PROMPT_TEMPLATES = [
     "a photo of {}",
-    # "a high-quality portrait photo of {}",
-    # "{}, studio portrait, sharp focus",
-    # "{}, professional headshot",
-    # "close-up photo of {}",
-    # "cinematic portrait of {}",
-    # "{} photographed in natural light",
-    # "detailed facial photo of {}",
-    # "{} photographed with DSLR",
-    # "realistic photo of {}",
+    "a high-quality portrait photo of {}",
+    "{}, studio portrait, sharp focus",
+    "{}, professional headshot",
+    "close-up photo of {}",
+    "cinematic portrait of {}",
+    "{} photographed in natural light",
+    "detailed facial photo of {}",
+    "{} photographed with DSLR",
+    "realistic photo of {}",
 ]
 RECORDING_TEMPLATES = [
     "a photo of {}",
@@ -50,13 +50,17 @@ PERSON_BANK = [
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
 OUTDIR = f"temp"
-STRENGTH_TAU = 0.1
-STRENGTH_GAMMA = 1.0
 ANCHOR_STRENGTH = 1.5
-USE_ANCHORS = True
-ANCHOR = "a portrait of a person"
-PERSON_TOP_K = 2
+USE_ANCHORS = False
+STRENGTH_TAU = 0.02
+STRENGTH_GAMMA = 1.25
+PERSON_WEIGHT = 0.35
+GATE_SHARPNESS = 16.0
+USE_SOFT_GATE = True
+PERSON_REMOVE_SCALE = 0.5
 RETAIN_TOP_K = 4
+PERSON_TOP_K = 6
+ANCHOR = "a portrait of a person"
 REC_H, REC_W = 512, 512
 GEN_H, GEN_W = 512, 512
 STEPS = 4
@@ -111,6 +115,9 @@ def run_one(
         "anchor_strength": ANCHOR_STRENGTH,
         "proj_eps": 1e-8,
         "debug_tokens": False,
+        "person_weight": PERSON_WEIGHT,
+        "gate_sharpness": GATE_SHARPNESS,
+        "use_soft_gate": USE_SOFT_GATE,
     }
     out = pipe(
         prompt=prompt,
@@ -191,6 +198,7 @@ def main():
     flux_finalize_cora_bases(
         retain_top_k=RETAIN_TOP_K,
         person_top_k=PERSON_TOP_K,
+        person_remove_scale=PERSON_REMOVE_SCALE,
     )
     _maybe_clear_cache()
     generate_images(pipe, TARGETS, PROMPT_TEMPLATES, split_name="targets")
