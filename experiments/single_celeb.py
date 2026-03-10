@@ -148,7 +148,7 @@ def main():
     run_one(pipe,prompt=ANCHOR,record_anchor_once=True,seed=3000,)
     flux_finalize_cora_bases()
     generate_images(pipe, TARGETS,PROMPT_TEMPLATES)
-    # generate_images(pipe, RETAINS,PROMPT_TEMPLATES)
+    generate_images(pipe, RETAINS,PROMPT_TEMPLATES)
     print(f"Done. Grids saved to: {OUTDIR}")
 if __name__ == "__main__": main()
 ###

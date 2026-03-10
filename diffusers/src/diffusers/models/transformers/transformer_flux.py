@@ -31,16 +31,25 @@ logger = logging.get_logger(__name__)
 # ===========================
 _FLUX_TARGET_VT_BANK_DUAL: Dict[int, Dict[str, List[torch.Tensor]]] = {}
 _FLUX_TARGET_VT_BANK_SINGLE: Dict[int, Dict[str, List[torch.Tensor]]] = {}
+_FLUX_TARGET_VI_BANK_DUAL: Dict[int, Dict[str, List[torch.Tensor]]] = {}
+_FLUX_TARGET_VI_BANK_SINGLE: Dict[int,Dict[str,List[torch.Tensor]]] = {}
+
 _FLUX_RETAIN_VT_BANK_DUAL: Dict[int, List[torch.Tensor]] = {}
 _FLUX_RETAIN_VT_BANK_SINGLE: Dict[int, List[torch.Tensor]] = {}
+_FLUX_RETAIN_VI_BANK_DUAL: Dict[int, List[torch.Tensor]] = {}
+_FLUX_RETAIN_VI_BANK_SINGLE: Dict[int, List[torch.Tensor]] = {}
 
 # legacy per-target anchor banks (kept for backward-compat; NOT used for union anchor build anymore)
 _FLUX_ANCHOR_VT_BANK_DUAL: Dict[int, Dict[str, List[torch.Tensor]]] = {}
 _FLUX_ANCHOR_VT_BANK_SINGLE: Dict[int, Dict[str, List[torch.Tensor]]] = {}
+_FLUX_ANCHOR_VI_BANK_DUAL: Dict[int, Dict[str, List[torch.Tensor]]] = {}
+_FLUX_ANCHOR_VI_BANK_SINGLE: Dict[int, Dict[str, List[torch.Tensor]]] = {}
 
 # NEW: single-anchor banks (record once, no concept)
 _FLUX_ANCHOR_VT_BANK_DUAL_ONCE: Dict[int, List[torch.Tensor]] = {}
 _FLUX_ANCHOR_VT_BANK_SINGLE_ONCE: Dict[int, List[torch.Tensor]] = {}
+_FLUX_ANCHOR_VI_BANK_DUAL_ONCE: Dict[int, List[torch.Tensor]] = {}
+_FLUX_ANCHOR_VI_BANK_SINGLE_ONCE: Dict[int, List[torch.Tensor]] = {}
 
 _FLUX_VRET_DUAL: Dict[int, torch.Tensor] = {}
 _FLUX_VRET_SINGLE: Dict[int, torch.Tensor] = {}
@@ -54,10 +63,14 @@ _FLUX_A_SINGLE: Dict[int, Dict[str, torch.Tensor]] = {}
 # union erase basis
 _FLUX_U_UNION_DUAL: Dict[int, torch.Tensor] = {}
 _FLUX_U_UNION_SINGLE: Dict[int, torch.Tensor] = {}
+_FLUX_U_VI_UNION_DUAL: Dict[int,torch.Tensor] = {}
+_FLUX_U_VI_UNION_SINGLE: Dict[int,torch.Tensor] = {}
 
 # union anchor basis (built ONLY from *_ONCE banks)
 _FLUX_A_UNION_DUAL: Dict[int, torch.Tensor] = {}
 _FLUX_A_UNION_SINGLE: Dict[int, torch.Tensor] = {}
+_FLUX_A_VI_UNION_DUAL: Dict[int, torch.Tensor] = {}
+_FLUX_A_VI_UNION_SINGLE: Dict[int, torch.Tensor] = {}
 
 _VT_DEDUP_COS_THR = 0.995
 _FLUX_RETAIN_LAMBDA = 1.0
@@ -72,18 +85,32 @@ def flux_reset_vt_banks(reset_retain: bool = True):
     global _FLUX_U_DUAL, _FLUX_U_SINGLE, _FLUX_A_DUAL, _FLUX_A_SINGLE
     global _FLUX_U_UNION_DUAL, _FLUX_U_UNION_SINGLE
     global _FLUX_A_UNION_DUAL, _FLUX_A_UNION_SINGLE
+    global _FLUX_TARGET_VI_BANK_DUAL, _FLUX_TARGET_VI_BANK_SINGLE
+    global _FLUX_ANCHOR_VI_BANK_DUAL, _FLUX_ANCHOR_VI_BANK_SINGLE
+    global _FLUX_ANCHOR_VI_BANK_DUAL_ONCE, _FLUX_ANCHOR_VI_BANK_SINGLE_ONCE
+    global _FLUX_U_VI_UNION_DUAL, _FLUX_U_VI_UNION_SINGLE
+    global _FLUX_A_VI_UNION_DUAL, _FLUX_A_VI_UNION_SINGLE
+    global _FLUX_RETAIN_VI_BANK_DUAL, _FLUX_RETAIN_VI_BANK_SINGLE
 
     _FLUX_TARGET_VT_BANK_DUAL.clear()
     _FLUX_TARGET_VT_BANK_SINGLE.clear()
+    _FLUX_TARGET_VI_BANK_DUAL.clear()
+    _FLUX_TARGET_VI_BANK_SINGLE.clear()
 
     if reset_retain:
         _FLUX_RETAIN_VT_BANK_DUAL.clear()
         _FLUX_RETAIN_VT_BANK_SINGLE.clear()
+        _FLUX_RETAIN_VI_BANK_DUAL.clear()
+        _FLUX_RETAIN_VI_BANK_SINGLE.clear()
 
     _FLUX_ANCHOR_VT_BANK_DUAL.clear()
     _FLUX_ANCHOR_VT_BANK_SINGLE.clear()
     _FLUX_ANCHOR_VT_BANK_DUAL_ONCE.clear()
-    _FLUX_ANCHOR_VT_BANK_SINGLE_ONCE.clear()
+    _FLUX_ANCHOR_VT_BANK_SINGLE_ONCE.clear()   
+    _FLUX_ANCHOR_VI_BANK_DUAL.clear()
+    _FLUX_ANCHOR_VI_BANK_SINGLE.clear()
+    _FLUX_ANCHOR_VI_BANK_DUAL_ONCE.clear()
+    _FLUX_ANCHOR_VI_BANK_SINGLE_ONCE.clear()
 
     _FLUX_VRET_DUAL.clear()
     _FLUX_VRET_SINGLE.clear()
@@ -94,10 +121,14 @@ def flux_reset_vt_banks(reset_retain: bool = True):
     _FLUX_A_SINGLE.clear()
 
     _FLUX_U_UNION_DUAL.clear()
+    _FLUX_U_VI_UNION_DUAL.clear()
     _FLUX_U_UNION_SINGLE.clear()
+    _FLUX_U_VI_UNION_SINGLE.clear()
 
     _FLUX_A_UNION_DUAL.clear()
+    _FLUX_A_VI_UNION_DUAL.clear()
     _FLUX_A_UNION_SINGLE.clear()
+    _FLUX_A_VI_UNION_SINGLE.clear()
 
 
 def _cos_sim_flat(a: torch.Tensor, b: torch.Tensor, eps: float = 1e-8) -> float:
@@ -202,10 +233,6 @@ def _remove_subspace_component(v: torch.Tensor, U: Optional[torch.Tensor], eps: 
 def _cora_score_and_coeff(v_free: torch.Tensor, U: torch.Tensor, eps: float) -> Tuple[torch.Tensor, torch.Tensor]:
     t = torch.einsum("dr,btd->btr", U, v_free)
     r = t.abs().amax(dim=-1) / (v_free.norm(dim=-1) + eps)
-    # print("t:", t)
-    # print("t.shape:", t.shape)
-    # print("r:", r)
-    # print("r.shape:", r.shape)
     return t, r
 
 
@@ -241,23 +268,39 @@ def _cora_erase_replace(
     m = (r >= tau).to(v_free.dtype).unsqueeze(-1)
     #pick top 3 r values for editing image tokens??
     top3_idx = r[0].topk(3).indices
-    k_txt = k_txt[:, top3_idx, :] if q_txt is not None else None
-    q_img = q_img @ k_txt.transpose(-1, -2) if q_txt is not None and q_img is not None else None
-    q_img = q_img/(k_txt.shape[-1] ** 0.5) if q_txt is not None and q_img is not None else None
-    q_img = q_img.softmax(dim=-2) if q_txt is not None and q_img is not None else None
+    q_txt = q_txt[:, top3_idx, :] if q_txt is not None else None
+    k_img = q_txt@k_img.transpose(-1, -2) if q_txt is not None and k_img is not None else None
+    k_img = k_img/(q_txt.shape[-1] ** 0.5) if q_txt is not None and k_img is not None else None
+    k_img = k_img.softmax(dim=-2) if q_txt is not None and k_img is not None else None
+    # print("k_txt.shape: ", k_txt.shape if k_txt is not None else None)
+    # print("q_txt.shape: ", q_txt.shape if q_txt is not None else None)
+    # print("q_img.shape: ", q_img.shape if q_img is not None else None)
+    # print("k_img.shape: ", k_img.shape if k_img is not None else None)
+    # print("v_img.shape: ", v_img.shape if v_img is not None else None)
+    # k_txt = k_txt[:, top3_idx, :] if k_txt is not None else None
+    # q_img = q_img @ k_txt.transpose(-1, -2) if q_txt is not None and q_img is not None else None
+    # q_img = q_img/(k_txt.shape[-1] ** 0.5) if q_txt is not None and q_img is not None else None
+    # q_img = q_img.softmax(dim=-2) if q_txt is not None and q_img is not None else None
+    
     # print("q_img: ",q_img)
     ind_ret = None
-    q_img_idx = []
-    if(q_img is not None):
-        # print("q_img max: ", q_img.max(dim=-2))
-        # print("q_img argmax: ", q_img.argmax(dim=-2))
-        for tok_j in range(q_img.shape[-1]):
-            tok_attn = q_img[0,:,tok_j]
-            top_path_idx = tok_attn.topk(25).indices #zero out top 5 image tokens for each chosen text token
-            v_img[:,top_path_idx,:] = 0
-            q_img_idx.extend(top_path_idx)
+    # q_img_idx = []
+    # if(q_img is not None):
+    #     # print("q_img max: ", q_img.max(dim=-2))
+    #     # print("q_img argmax: ", q_img.argmax(dim=-2))
+    #     for tok_j in range(q_img.shape[-1]):
+    #         tok_attn = q_img[0,:,tok_j]
+    #         top_path_idx = tok_attn.topk(25).indices #zero out top 5 image tokens for each chosen text token
+    #         v_img[:,top_path_idx,:] = 0
+    #         q_img_idx.extend(top_path_idx)
         # q_img_max,q_img_idx = q_img.max(dim=-2)
-        
+    k_img_idx = []
+    if(k_img is not None):
+        for tok_j in range(k_img.shape[-2]):
+            tok_attn = k_img[0,tok_j,:]
+            top_path_idx = tok_attn.topk(50).indices #zero out top 50 image tokens for each chosen text token
+            v_img[:,top_path_idx,:] = 0 # instead of zero... should we store this or project these components out of the prompt's v_img
+            k_img_idx.extend(top_path_idx)
         # q_img_max = list(q_img_max.squeeze(0))  # shape [img_tokens_len, H]
         # q_img_idx = list(q_img_idx.squeeze(0))  # shape [img_tokens_len, H]
         # print("q_img_max: ", q_img_max)
@@ -265,7 +308,7 @@ def _cora_erase_replace(
         # for ab,id in zip(q_img_max,q_img_idx):
             # print(str(ab)+" "+str(id))
             # v_img[:,id,:] = 0
-        ind_ret = q_img_idx
+        ind_ret = k_img_idx
     # print("q_img.shape: ", q_img.shape if q_img is not None else None) 1 x 4096 x 3
     
     # print("m:", m)
@@ -302,6 +345,9 @@ def _make_attn_eos_duplicated_vt(
     vt: torch.Tensor,
     q: torch.Tensor,
     k: torch.Tensor,
+    # q_txt: Optional[torch.Tensor] = None,
+    # k_img: Optional[torch.Tensor] = None,
+    # v_img: Optional[torch.Tensor] = None,
     *,
     token_end: Optional[int] = None,     # NEW
     fill_from: int = 1,
@@ -317,7 +363,7 @@ def _make_attn_eos_duplicated_vt(
 
     # choose how many tokens to pool over (default: 2 if not provided)
     if token_end is None:
-        token_end = min(2, L)
+        token_end = min(2, L) 
     token_end = int(max(1, min(token_end, L)))   # clamp to [1, L]
 
     # attention over text tokens
@@ -337,7 +383,29 @@ def _make_attn_eos_duplicated_vt(
     # pool over [0:token_end]
     imp_slice = imp[:, :, :token_end]  # [1,H,T]
     w = imp_slice / imp_slice.sum(dim=-1, keepdim=True).clamp_min(eps)  # [1,H,T]
-
+    
+    # w_all_head = w.mean(dim=-2)
+    # imp_tokens = w_all_head[0].topk(3).indices
+    
+    # print("imp_tokens: ",imp_tokens)
+    # print("imp_tokens.shape: ",imp_tokens.shape)
+    # q_txt = q_txt[:, imp_tokens, :] if q_txt is not None else None
+    # k_img = q_txt@k_img.transpose(-1, -2) if q_txt is not None and k_img is not None else None
+    # k_img = k_img/(q_txt.shape[-1] ** 0.5) if q_txt is not None and k_img is not None else None
+    # k_img = k_img.softmax(dim=-2) if q_txt is not None and k_img is not None else None
+    # k_img_idx = []
+    # selected_img_vec = None
+    # if(k_img is not None):
+    #     for tok_j in range(k_img.shape[-2]):
+    #         tok_attn = k_img[0,tok_j,:]
+    #         top_path_idx = tok_attn.topk(50).indices #select top 50 image tokens
+    #         if(selected_img_vec is None):
+    #             selected_img_vec = v_img[:,top_path_idx,:] # 1 x 50 x 3072
+    #         else:
+    #             selected_img_vec = torch.cat([selected_img_vec, v_img[:,top_path_idx,:]], dim=1)
+    #         # v_img[:,top_path_idx,:] = 0 # instead of zero... should we store this or project these components out of the prompt's v_img
+    #         k_img_idx.extend(top_path_idx)
+    
     vt_slice = vt[:, :token_end, :, :].permute(0, 2, 1, 3)  # [1,H,T,Dh]
     d = (w.unsqueeze(-1) * vt_slice).sum(dim=-2, keepdim=True)          # [1,H,1,Dh]
 
@@ -351,6 +419,7 @@ def _make_attn_eos_duplicated_vt(
         vt2[:, fill_from:, :, :] = d.expand(1, L - fill_from, H, Dh)
     if zero_sot:
         vt2[:, 0, :, :] = 0.0
+    # return vt2, selected_img_vec
     return vt2
 
 def _retain_basis_from_vt_list(v_list: Optional[List[torch.Tensor]], *, top_k: int = 3) -> Optional[torch.Tensor]:
@@ -554,6 +623,10 @@ class FluxAttnProcessor:
                 vt_single = value[:, :text_seq_len].detach()[:1].contiguous()
                 q_txt = query[:, :text_seq_len].detach()[:1].contiguous()
                 k_txt = key[:, :text_seq_len].detach()[:1].contiguous()
+                # img_tokens_len = query.shape[1] - text_seq_len
+                # k_img = key[:,text_seq_len:].reshape(key.shape[0],img_tokens_len, -1).detach()[:1].contiguous()
+                # v_img = value[:,text_seq_len:].reshape(value.shape[0],img_tokens_len, -1).detach()[:1].contiguous()
+                # vt_single, vi_single = _make_attn_eos_duplicated_vt(vt_single, q_txt, k_txt, k_img = k_img,v_img = v_img,attn_mode="col",token_end=detector_token_end,)
                 vt_single = _make_attn_eos_duplicated_vt(vt_single, q_txt, k_txt, attn_mode="col",token_end=detector_token_end,)
 
                 if record_retain_vt:
@@ -564,6 +637,13 @@ class FluxAttnProcessor:
                         max_keep=max_retain_vt_per_block,
                         dedup_thr=vt_dedup_cos_thr,
                     )
+                    # _bank_add_vt(
+                    #     _FLUX_RETAIN_VT_BANK_SINGLE,
+                    #     block_index,
+                    #     vi_single,
+                    #     max_keep=max_retain_vt_per_block,
+                    #     dedup_thr=vt_dedup_cos_thr,
+                    # )
                 if record_target_vt:
                     if not record_concept:
                         raise ValueError("record_target_vt=True requires joint_attention_kwargs['record_concept']")
@@ -575,6 +655,14 @@ class FluxAttnProcessor:
                         max_keep=max_target_vt_per_block,
                         dedup_thr=vt_dedup_cos_thr,
                     )
+                    # _bank_add_concept_vt(
+                    #     _FLUX_TARGET_VI_BANK_SINGLE,
+                    #     block_index,
+                    #     record_concept,
+                    #     vi_single,
+                    #     max_keep=max_retain_vt_per_block,
+                    #     dedup_thr=vt_dedup_cos_thr,
+                    # )
 
                 # legacy per-target anchor
                 if record_anchor_vt:
@@ -588,6 +676,14 @@ class FluxAttnProcessor:
                         max_keep=max_anchor_vt_per_block,
                         dedup_thr=vt_dedup_cos_thr,
                     )
+                    # _bank_add_concept_vt(
+                    #     _FLUX_ANCHOR_VI_BANK_SINGLE,
+                    #     block_index,
+                    #     record_concept,
+                    #     vi_single,
+                    #     max_keep=max_anchor_vt_per_block,
+                    #     dedup_thr=vt_dedup_cos_thr,
+                    # )
 
                 # NEW single anchor (no concept)
                 if record_anchor_once:
@@ -598,6 +694,13 @@ class FluxAttnProcessor:
                         max_keep=max_anchor_vt_per_block,
                         dedup_thr=vt_dedup_cos_thr,
                     )
+                    # _bank_add_anchor_once_vt(
+                    #     _FLUX_ANCHOR_VI_BANK_SINGLE_ONCE,
+                    #     block_index,
+                    #     vi_single,
+                    #     max_keep=max_anchor_vt_per_block,
+                    #     dedup_thr=vt_dedup_cos_thr,
+                    # )
 
             if apply_target_proj and (block_index in target_single_block_indices):
                 s = 0
@@ -635,11 +738,11 @@ class FluxAttnProcessor:
                     v_slice2, v_img,indx = _cora_erase_replace(
                         v_slice,
                         Vret=Vret,
-                        # q_img = q_img,
-                        # k_img = k_img,
-                        # v_img = v_img,
-                        # q_txt = q_slice,
-                        # k_txt = k_slice,
+                        q_img = q_img,
+                        k_img = k_img,
+                        v_img = v_img,
+                        q_txt = q_slice,
+                        k_txt = k_slice,
                         U=U,
                         A=A,
                         tau=float(strength_tau),
@@ -764,11 +867,11 @@ class FluxAttnProcessor:
                         Vret=Vret,
                         U=U,
                         A=A,
-                        # q_txt = q_slice,
-                        # k_txt = k_slice,
-                        # q_img = q_img,
-                        # k_img = k_img,
-                        # v_img = v_img,
+                        q_txt = q_slice,
+                        k_txt = k_slice,
+                        q_img = q_img,
+                        k_img = k_img,
+                        v_img = v_img,
                         tau=float(strength_tau),
                         gamma=float(strength_gamma),
                         anchor_strength=float(anchor_strength),

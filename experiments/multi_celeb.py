@@ -66,7 +66,7 @@ RETAINS: List[str] = [
     "Justin Bieber",
 ]
 ANCHOR = "A generic person"
-OUTDIR = "results_mmdit/multi_celeb_without_img_edit_localization"
+OUTDIR = "results_mmdit/multi_celeb_flipped_with_img_edit_localization_250"
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
 STRENGTH_TAU = 0.1
