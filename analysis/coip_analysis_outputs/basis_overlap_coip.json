@@ -1,0 +1,405 @@
+{
+  "dual": {
+    "0": {
+      "U_vs_Vperson": 0.045758407562971115,
+      "U_vs_Vret": 0.013452939689159393,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "1": {
+      "U_vs_Vperson": 0.08000603318214417,
+      "U_vs_Vret": 0.019563976675271988,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "2": {
+      "U_vs_Vperson": 0.10131167620420456,
+      "U_vs_Vret": 0.03144361078739166,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "3": {
+      "U_vs_Vperson": 0.07418598234653473,
+      "U_vs_Vret": 0.022725295275449753,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "4": {
+      "U_vs_Vperson": 0.06489892303943634,
+      "U_vs_Vret": 0.016686778515577316,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "5": {
+      "U_vs_Vperson": 0.08648256957530975,
+      "U_vs_Vret": 0.028654206544160843,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "6": {
+      "U_vs_Vperson": 0.07397881150245667,
+      "U_vs_Vret": 0.018998924642801285,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "7": {
+      "U_vs_Vperson": 0.07071713358163834,
+      "U_vs_Vret": 0.01757866144180298,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "8": {
+      "U_vs_Vperson": 0.06834680587053299,
+      "U_vs_Vret": 0.014453122392296791,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "9": {
+      "U_vs_Vperson": 0.05740406736731529,
+      "U_vs_Vret": 0.01794826239347458,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "10": {
+      "U_vs_Vperson": 0.0688905194401741,
+      "U_vs_Vret": 0.01462277676910162,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "11": {
+      "U_vs_Vperson": 0.0681038498878479,
+      "U_vs_Vret": 0.015152989886701107,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "12": {
+      "U_vs_Vperson": 0.0647188350558281,
+      "U_vs_Vret": 0.011431810446083546,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "13": {
+      "U_vs_Vperson": 0.06492072343826294,
+      "U_vs_Vret": 0.015936125069856644,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "14": {
+      "U_vs_Vperson": 0.06468882411718369,
+      "U_vs_Vret": 0.016455387696623802,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "15": {
+      "U_vs_Vperson": 0.06905786693096161,
+      "U_vs_Vret": 0.015307046473026276,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "16": {
+      "U_vs_Vperson": 0.08079288899898529,
+      "U_vs_Vret": 0.017792735248804092,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "17": {
+      "U_vs_Vperson": 0.07983160018920898,
+      "U_vs_Vret": 0.016724858433008194,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "18": {
+      "U_vs_Vperson": 0.08584292978048325,
+      "U_vs_Vret": 0.014445737935602665,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    }
+  },
+  "single": {
+    "0": {
+      "U_vs_Vperson": 0.05948668345808983,
+      "U_vs_Vret": 0.012433772906661034,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "1": {
+      "U_vs_Vperson": 0.056385330855846405,
+      "U_vs_Vret": 0.009959370829164982,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "2": {
+      "U_vs_Vperson": 0.0517505407333374,
+      "U_vs_Vret": 0.007812690921127796,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "3": {
+      "U_vs_Vperson": 0.04845505207777023,
+      "U_vs_Vret": 0.007252281066030264,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "4": {
+      "U_vs_Vperson": 0.04156498610973358,
+      "U_vs_Vret": 0.006436510942876339,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "5": {
+      "U_vs_Vperson": 0.05129335820674896,
+      "U_vs_Vret": 0.007527907378971577,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "6": {
+      "U_vs_Vperson": 0.04916456341743469,
+      "U_vs_Vret": 0.0080503448843956,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "7": {
+      "U_vs_Vperson": 0.04965377599000931,
+      "U_vs_Vret": 0.00820932723581791,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "8": {
+      "U_vs_Vperson": 0.06056739389896393,
+      "U_vs_Vret": 0.008820089511573315,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "9": {
+      "U_vs_Vperson": 0.06788742542266846,
+      "U_vs_Vret": 0.008236536756157875,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "10": {
+      "U_vs_Vperson": 0.06262724846601486,
+      "U_vs_Vret": 0.012471224181354046,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "11": {
+      "U_vs_Vperson": 0.059439998120069504,
+      "U_vs_Vret": 0.011611297726631165,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "12": {
+      "U_vs_Vperson": 0.05465397238731384,
+      "U_vs_Vret": 0.013788219541311264,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "13": {
+      "U_vs_Vperson": 0.05895846337080002,
+      "U_vs_Vret": 0.01590726338326931,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "14": {
+      "U_vs_Vperson": 0.05336882919073105,
+      "U_vs_Vret": 0.019168788567185402,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "15": {
+      "U_vs_Vperson": 0.06037022918462753,
+      "U_vs_Vret": 0.020183080807328224,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "16": {
+      "U_vs_Vperson": 0.06337788701057434,
+      "U_vs_Vret": 0.0193309485912323,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "17": {
+      "U_vs_Vperson": 0.06719707697629929,
+      "U_vs_Vret": 0.018243785947561264,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "18": {
+      "U_vs_Vperson": 0.05512397736310959,
+      "U_vs_Vret": 0.01776997558772564,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "19": {
+      "U_vs_Vperson": 0.05664695054292679,
+      "U_vs_Vret": 0.02206277847290039,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "20": {
+      "U_vs_Vperson": 0.06030350178480148,
+      "U_vs_Vret": 0.02436513453722,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "21": {
+      "U_vs_Vperson": 0.05366293340921402,
+      "U_vs_Vret": 0.01932818442583084,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "22": {
+      "U_vs_Vperson": 0.0547931008040905,
+      "U_vs_Vret": 0.024592174217104912,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "23": {
+      "U_vs_Vperson": 0.05207277461886406,
+      "U_vs_Vret": 0.021205736324191093,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "24": {
+      "U_vs_Vperson": 0.056388355791568756,
+      "U_vs_Vret": 0.01919572800397873,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "25": {
+      "U_vs_Vperson": 0.05201492831110954,
+      "U_vs_Vret": 0.020037967711687088,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "26": {
+      "U_vs_Vperson": 0.06842420995235443,
+      "U_vs_Vret": 0.024489233270287514,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "27": {
+      "U_vs_Vperson": 0.057989805936813354,
+      "U_vs_Vret": 0.026088176295161247,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "28": {
+      "U_vs_Vperson": 0.06628751009702682,
+      "U_vs_Vret": 0.026326794177293777,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "29": {
+      "U_vs_Vperson": 0.07282360643148422,
+      "U_vs_Vret": 0.027621576562523842,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "30": {
+      "U_vs_Vperson": 0.06895773112773895,
+      "U_vs_Vret": 0.029381975531578064,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "31": {
+      "U_vs_Vperson": 0.0824250876903534,
+      "U_vs_Vret": 0.030476393178105354,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "32": {
+      "U_vs_Vperson": 0.08001451194286346,
+      "U_vs_Vret": 0.030810678377747536,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "33": {
+      "U_vs_Vperson": 0.07859984040260315,
+      "U_vs_Vret": 0.027006089687347412,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "34": {
+      "U_vs_Vperson": 0.06598342955112457,
+      "U_vs_Vret": 0.025273211300373077,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "35": {
+      "U_vs_Vperson": 0.0744374543428421,
+      "U_vs_Vret": 0.022389888763427734,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "36": {
+      "U_vs_Vperson": 0.08580246567726135,
+      "U_vs_Vret": 0.026875292882323265,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    },
+    "37": {
+      "U_vs_Vperson": 0.09118159860372543,
+      "U_vs_Vret": 0.024461396038532257,
+      "rank_U": 12,
+      "rank_Vperson": 6,
+      "rank_Vret": 4
+    }
+  }
+}

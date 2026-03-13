@@ -1,0 +1,8 @@
+{
+  "prompt": "A cinematic outdoor portrait of a woman",
+  "seed": 201,
+  "row_tag": "row3_nontarget",
+  "base_path": "figure_old_method_cols245/row3_nontarget_01_base.png",
+  "edited_path": "figure_old_method_cols245/row3_nontarget_01_old_method.png",
+  "heatmap_path": "figure_old_method_cols245/row3_nontarget_01_old_heatmap.png"
+}

@@ -1,0 +1,8 @@
+{
+  "prompt": "A studio portrait photograph of Donald Trump",
+  "seed": 0,
+  "row_tag": "row1_target",
+  "base_path": "figure_current_method_cols134/row1_target_00_col1_base.png",
+  "edited_path": "figure_current_method_cols134/row1_target_00_col3_current.png",
+  "heatmap_path": "figure_current_method_cols134/row1_target_00_col4_removed_heatmap.png"
+}

@@ -1,0 +1,8 @@
+{
+  "prompt": "A studio portrait photograph of a man",
+  "seed": 200,
+  "row_tag": "row3_nontarget",
+  "base_path": "figure_current_method_cols134/row3_nontarget_00_col1_base.png",
+  "edited_path": "figure_current_method_cols134/row3_nontarget_00_col3_current.png",
+  "heatmap_path": "figure_current_method_cols134/row3_nontarget_00_col4_removed_heatmap.png"
+}

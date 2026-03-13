@@ -1,0 +1,8 @@
+{
+  "prompt": "A cinematic outdoor portrait of Donald Trump",
+  "seed": 1,
+  "row_tag": "row1_target",
+  "base_path": "figure_current_method_cols134/row1_target_01_col1_base.png",
+  "edited_path": "figure_current_method_cols134/row1_target_01_col3_current.png",
+  "heatmap_path": "figure_current_method_cols134/row1_target_01_col4_removed_heatmap.png"
+}
