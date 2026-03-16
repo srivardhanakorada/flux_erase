@@ -10,48 +10,48 @@ from diffusers.models.transformers.transformer_flux import (  # type: ignore
 
 MODEL_ID = "black-forest-labs/FLUX.1-schnell"
 PROMPT_TEMPLATES = [
-    "a photo of {}",
-    "a high-quality portrait photo of {}",
-    "{}, studio portrait, sharp focus",
-    "{}, professional headshot",
-    "close-up photo of {}",
-    "cinematic portrait of {}",
-    "{} photographed in natural light",
-    "detailed facial photo of {}",
-    "{} photographed with DSLR",
-    "realistic photo of {}",
+    "a photo of a {}",
+    "a close-up photo of a {}",
+    "{} on a plain background",
+    "detailed photo of a {}",
+    "realistic image of a {}",
+    "studio photo of a {}",
+    "a {} placed on a table",
+    "product photo of a {}",
+    "a photo of a {} in natural light",
+    "high-resolution photo of a {}",
 ]
 RECORDING_TEMPLATES = [
     "a photo of {}",
     "{}, studio portrait, sharp focus",
 ]
 TARGETS: List[str] = [
-    "Donald Trump",
+    "Orange",
+    "Lemon",
+    "Jackfruit"
 ]
 RETAINS = [
-    "Hillary Clinton",
-    "Melania Trump",
-    "Barack Obama",
+    "Strawberry",
+    "Pineapple",
 ]
 NON_TARGETS = [
-    "Bill Clinton",
-    "Cristiano Ronaldo"
+    "Fig"
 ]
 PERSON_BANK = [
-    "a portrait of a person",
-    "a portrait of a man",
-    "a portrait of a woman",
-    "a middle-aged man",
-    "a middle-aged woman",
+    "a portrait of a fruit",
+    "a photo of a fruit",
+    "a photo of a generic fruit",
+    "a potrait of a generic fruit",
+    "a photo of a high resolution fruit",
 ]
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
-OUTDIR = f"results_new/ours/single_celeb_ours"
+OUTDIR = f"results_new/ours/multi_object_ours"
 STRENGTH_TAU = 0.1
-STRENGTH_GAMMA = 1.75
+STRENGTH_GAMMA = 2.0
 ANCHOR_STRENGTH = 1.0
 USE_ANCHORS = False
-ANCHOR = "a portrait of a person"
+ANCHOR = "a photo of a fruit"
 PERSON_TOP_K = 2
 RETAIN_TOP_K = 4
 REC_H, REC_W = 768, 768

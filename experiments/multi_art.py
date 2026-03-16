@@ -10,48 +10,45 @@ from diffusers.models.transformers.transformer_flux import (  # type: ignore
 
 MODEL_ID = "black-forest-labs/FLUX.1-schnell"
 PROMPT_TEMPLATES = [
-    "a photo of {}",
-    "a high-quality portrait photo of {}",
-    "{}, studio portrait, sharp focus",
-    "{}, professional headshot",
-    "close-up photo of {}",
-    "cinematic portrait of {}",
-    "{} photographed in natural light",
-    "detailed facial photo of {}",
-    "{} photographed with DSLR",
-    "realistic photo of {}",
+    "an artwork in the style of {}",
+    "a painting in the style of {}",
+    "an illustration in the style of {}",
+    "a digital artwork in the style of {}",
+    "an oil painting in the style of {}",
+    "a watercolor painting in the style of {}",
+    "a classical painting in the style of {}",
+    "a detailed canvas painting in the style of {}",
+    "a museum-quality masterpiece in the style of {}",
+    "a highly detailed fine art piece in the style of {}",
 ]
 RECORDING_TEMPLATES = [
-    "a photo of {}",
-    "{}, studio portrait, sharp focus",
+    "a painting in the style of {}",
+    "an art in the style of {}",
 ]
 TARGETS: List[str] = [
-    "Donald Trump",
+    "Pablo Picasso",
+    "Andy Warhol",
+    "Claude Monet"
 ]
 RETAINS = [
-    "Hillary Clinton",
-    "Melania Trump",
-    "Barack Obama",
-]
-NON_TARGETS = [
-    "Bill Clinton",
-    "Cristiano Ronaldo"
+    "Vincent van Gogh",
+    "Caravaggio",
 ]
 PERSON_BANK = [
-    "a portrait of a person",
-    "a portrait of a man",
-    "a portrait of a woman",
-    "a middle-aged man",
-    "a middle-aged woman",
+    "a painting",
+    "a modern painting",
+    "a photo of an art",
+    "a painting in genric art style",
+    "a potrait painted in generic art style",
 ]
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
-OUTDIR = f"results_new/ours/single_celeb_ours"
+OUTDIR = f"results_new/ours/multi_art_ours"
 STRENGTH_TAU = 0.1
 STRENGTH_GAMMA = 1.75
 ANCHOR_STRENGTH = 1.0
 USE_ANCHORS = False
-ANCHOR = "a portrait of a person"
+ANCHOR = "a portrait of a art"
 PERSON_TOP_K = 2
 RETAIN_TOP_K = 4
 REC_H, REC_W = 768, 768
@@ -192,7 +189,6 @@ def main():
     _maybe_clear_cache()
     generate_images(pipe, TARGETS, PROMPT_TEMPLATES, split_name="targets")
     generate_images(pipe, RETAINS, PROMPT_TEMPLATES, split_name="retains")
-    generate_images(pipe, NON_TARGETS, PROMPT_TEMPLATES, split_name="non_targets")
     print(f"Done. Results saved to: {OUTDIR}")
 
 if __name__ == "__main__": main()

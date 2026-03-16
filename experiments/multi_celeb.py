@@ -23,7 +23,6 @@ PROMPT_TEMPLATES = [
 ]
 RECORDING_TEMPLATES = [
     "a photo of {}",
-    # "{} photographed with DSLR",
     "{}, studio portrait, sharp focus",
 ]
 TARGETS: List[str] = [
@@ -32,23 +31,13 @@ TARGETS: List[str] = [
     "Michael Jackson",
 ]
 RETAINS = [
-    "Barack Obama",
     "Brad Pitt",
-    "Tom Cruise",
-    "Melania Trump",
     "Hillary Clinton",
-    "Angelina Jolie",
-    "Ed Sheeran",
     "Taylor Swift",
-    "Justin Bieber",
 ]
 NON_TARGETS = [
-    "Melania Trump",
-    "Hillary Clinton",
-    "Angelina Jolie",
-    "Ed Sheeran",
-    "Taylor Swift",
-    "Justin Bieber",
+    "Bill Clinton",
+    "Cristiano Ronaldo"
 ]
 PERSON_BANK = [
     "a portrait of a person",
@@ -59,21 +48,21 @@ PERSON_BANK = [
 ]
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
-OUTDIR =  f"results_new/multi_celeb"
+OUTDIR =  f"results_new/ours/multi_celeb_ours"
 STRENGTH_TAU = 0.1
-STRENGTH_GAMMA = 1.35
-ANCHOR_STRENGTH = 1.5
-USE_ANCHORS = True
+STRENGTH_GAMMA = 1.5
+ANCHOR_STRENGTH = 1.0
+USE_ANCHORS = False
 ANCHOR = "a portrait of a person"
 PERSON_TOP_K = 2
 RETAIN_TOP_K = 4
-REC_H, REC_W = 512, 512
-GEN_H, GEN_W = 512, 512
+REC_H, REC_W = 768, 768
+GEN_H, GEN_W = 768, 768
 STEPS = 4
 GUIDANCE = 3.5
 N_IMAGES_PER_PROMPT = 1
 START_SEED = 0
-END_SEED = 24
+END_SEED = 99
 SEEDS = [i for i in range(START_SEED, END_SEED + 1)]
 os.makedirs(OUTDIR, exist_ok=True)
 
@@ -86,8 +75,7 @@ def _sanitize(s: str, max_len: int = 120) -> str:
 def _make_prompt(x: str, prompt_template: str) -> str: return prompt_template.format(x)
 
 def _maybe_clear_cache():
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if torch.cuda.is_available(): torch.cuda.empty_cache()
 
 @torch.no_grad()
 def run_one(
@@ -206,7 +194,7 @@ def main():
     _maybe_clear_cache()
     generate_images(pipe, TARGETS, PROMPT_TEMPLATES, split_name="targets")
     generate_images(pipe, RETAINS, PROMPT_TEMPLATES, split_name="retains")
-    #generate_images(pipe, NON_TARGETS, PROMPT_TEMPLATES, split_name="non_targets")
+    generate_images(pipe, NON_TARGETS, PROMPT_TEMPLATES, split_name="non_targets")
     print(f"Done. Results saved to: {OUTDIR}")
 
 if __name__ == "__main__": main()
