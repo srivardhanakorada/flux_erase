@@ -20,6 +20,8 @@ from ..embeddings import (
 from ..modeling_outputs import Transformer2DModelOutput
 from ..modeling_utils import ModelMixin
 from ..normalization import AdaLayerNormContinuous, AdaLayerNormZero, AdaLayerNormZeroSingle
+from collections import defaultdict
+import copy
 
 logger = logging.get_logger(__name__)
 
@@ -62,6 +64,22 @@ _FLUX_A_UNION_SINGLE: Dict[int, torch.Tensor] = {}
 
 _VT_DEDUP_COS_THR = 0.995
 _FLUX_RETAIN_LAMBDA = 0.75
+# ============================================================
+# Target-information diagnostics
+# ============================================================
+
+_FLUX_TARGET_INFO_STATS: Dict[str, Dict[str, Dict[int, List[Dict[str, float]]]]] = {
+    "dual": {
+        "target": defaultdict(list),
+        "retain": defaultdict(list),
+        "non_target": defaultdict(list),
+    },
+    "single": {
+        "target": defaultdict(list),
+        "retain": defaultdict(list),
+        "non_target": defaultdict(list),
+    },
+}
 
 
 def flux_reset_vt_banks(reset_retain: bool = True):
@@ -74,6 +92,7 @@ def flux_reset_vt_banks(reset_retain: bool = True):
     global _FLUX_U_DUAL, _FLUX_U_SINGLE, _FLUX_A_DUAL, _FLUX_A_SINGLE
     global _FLUX_U_UNION_DUAL, _FLUX_U_UNION_SINGLE
     global _FLUX_A_UNION_DUAL, _FLUX_A_UNION_SINGLE
+    global _FLUX_TARGET_INFO_STATS
 
     _FLUX_TARGET_VT_BANK_DUAL.clear()
     _FLUX_TARGET_VT_BANK_SINGLE.clear()
@@ -104,6 +123,81 @@ def flux_reset_vt_banks(reset_retain: bool = True):
 
     _FLUX_A_UNION_DUAL.clear()
     _FLUX_A_UNION_SINGLE.clear()
+
+    _FLUX_TARGET_INFO_STATS = {
+        "dual": {
+            "target": defaultdict(list),
+            "retain": defaultdict(list),
+            "non_target": defaultdict(list),
+        },
+        "single": {
+            "target": defaultdict(list),
+            "retain": defaultdict(list),
+            "non_target": defaultdict(list),
+        },
+    }
+
+def flux_reset_target_info_stats():
+    global _FLUX_TARGET_INFO_STATS
+    _FLUX_TARGET_INFO_STATS = {
+        "dual": {
+            "target": defaultdict(list),
+            "retain": defaultdict(list),
+            "non_target": defaultdict(list),
+        },
+        "single": {
+            "target": defaultdict(list),
+            "retain": defaultdict(list),
+            "non_target": defaultdict(list),
+        },
+    }
+
+def flux_get_target_info_stats():
+    return copy.deepcopy(_FLUX_TARGET_INFO_STATS)
+
+def _record_target_info_stats(kind: str, label: str, block_index: int, stats: Dict[str, float]):
+    if kind not in _FLUX_TARGET_INFO_STATS:
+        return
+    if label not in _FLUX_TARGET_INFO_STATS[kind]:
+        _FLUX_TARGET_INFO_STATS[kind][label] = defaultdict(list)
+    _FLUX_TARGET_INFO_STATS[kind][label][block_index].append(stats)
+
+def _target_info_stats(
+    v_slice: torch.Tensor,
+    U: torch.Tensor,
+    Vret: Optional[torch.Tensor] = None,
+    eps: float = 1e-8,
+) -> Dict[str, float]:
+    v32 = v_slice.to(torch.float32)
+
+    if Vret is not None and Vret.numel() > 0 and Vret.shape[1] > 0:
+        v_pres = _project_with_basis(v32, Vret)
+        v_free = v32 - _FLUX_RETAIN_LAMBDA * v_pres
+    else:
+        v_free = v32
+
+    if U is None or U.numel() == 0 or U.shape[1] == 0:
+        return {
+            "coeff_norm_mean": 0.0,
+            "proj_norm_mean": 0.0,
+            "relative_proj_mean": 0.0,
+            "max_coeff_mean": 0.0,
+        }
+
+    t, r = _cora_score_and_coeff(v_free, U, eps=eps)
+    proj_target = torch.einsum("dr,btr->btd", U, t)
+
+    proj_norm = proj_target.norm(dim=-1)
+    v_norm = v_free.norm(dim=-1).clamp_min(eps)
+    rel_proj = proj_norm / v_norm
+    coeff_norm = t.norm(dim=-1)
+
+    return {
+        "coeff_norm_mean": float(coeff_norm.mean().item()),
+        "proj_norm_mean": float(proj_norm.mean().item()),
+        "relative_proj_mean": float(rel_proj.mean().item()),
+        "max_coeff_mean": float(r.mean().item()),
+    }
 
 
 def _cos_sim_flat(a: torch.Tensor, b: torch.Tensor, eps: float = 1e-8) -> float:
@@ -562,9 +656,11 @@ class FluxAttnProcessor:
         text_seq_len: Optional[int] = None,
         record_target_vt: bool = False,
         record_retain_vt: bool = False,
-        record_person_vt: bool = False,      # NEW for COIP
+        record_person_vt: bool = False,
         record_anchor_once: bool = False,
         apply_target_proj: bool = False,
+        measure_target_info: bool = False,
+        measure_label: str = "target",
         strength_tau: float = 0.2,
         strength_gamma: float = 1.0,
         anchor_strength: float = 2.5,
@@ -577,7 +673,7 @@ class FluxAttnProcessor:
         vt_dedup_cos_thr: float = _VT_DEDUP_COS_THR,
         max_target_vt_per_block: int = 32,
         max_retain_vt_per_block: int = 32,
-        max_person_vt_per_block: int = 64,   # NEW for COIP
+        max_person_vt_per_block: int = 64,
         max_anchor_vt_per_block: int = 32,
         proj_token_end: Optional[int] = None,
         detector_token_end: Optional[int] = None,
@@ -656,7 +752,7 @@ class FluxAttnProcessor:
                         dedup_thr=vt_dedup_cos_thr,
                     )
 
-            if apply_target_proj and (block_index in target_single_block_indices):
+            if (measure_target_info or apply_target_proj) and (block_index in target_single_block_indices):
                 s = 0
                 e = int(text_seq_len if proj_token_end is None else max(1, min(int(proj_token_end), text_seq_len)))
 
@@ -664,7 +760,7 @@ class FluxAttnProcessor:
                 v_slice = v_txt[:, s:e, :]
 
                 Vret = _FLUX_VRET_SINGLE.get(block_index, None)
-                U = _FLUX_U_UNION_SINGLE.get(block_index, None)   # COIP identity-residual basis
+                U = _FLUX_U_UNION_SINGLE.get(block_index, None)
                 A = _FLUX_A_UNION_SINGLE.get(block_index, None) if use_anchors else None
                 use_replace = bool(use_anchors and (A is not None))
 
@@ -673,21 +769,31 @@ class FluxAttnProcessor:
                     A = None if A is None else A.to(device=v_slice.device, dtype=torch.float32)
                     Vret = None if Vret is None else Vret.to(device=v_slice.device, dtype=torch.float32)
 
-                    v_slice2 = _cora_erase_replace(
-                        v_slice,
-                        Vret=Vret,
-                        U=U,
-                        A=A,
-                        tau=float(strength_tau),
-                        gamma=float(strength_gamma),
-                        anchor_strength=float(anchor_strength),
-                        eps=float(proj_eps),
-                        use_replace=use_replace,
-                    )
+                    if measure_target_info:
+                        stats = _target_info_stats(
+                            v_slice=v_slice,
+                            U=U,
+                            Vret=Vret,
+                            eps=float(proj_eps),
+                        )
+                        _record_target_info_stats("single", measure_label, block_index, stats)
 
-                    v_txt = torch.cat([v_txt[:, :s, :], v_slice2, v_txt[:, e:, :]], dim=1)
-                    value_txt_new = v_txt.view(value.shape[0], text_seq_len, value.shape[2], value.shape[3])
-                    value[:, :text_seq_len] = torch.nan_to_num(value_txt_new, nan=0.0, posinf=0.0, neginf=0.0)
+                    if apply_target_proj:
+                        v_slice2 = _cora_erase_replace(
+                            v_slice,
+                            Vret=Vret,
+                            U=U,
+                            A=A,
+                            tau=float(strength_tau),
+                            gamma=float(strength_gamma),
+                            anchor_strength=float(anchor_strength),
+                            eps=float(proj_eps),
+                            use_replace=use_replace,
+                        )
+
+                        v_txt = torch.cat([v_txt[:, :s, :], v_slice2, v_txt[:, e:, :]], dim=1)
+                        value_txt_new = v_txt.view(value.shape[0], text_seq_len, value.shape[2], value.shape[3])
+                        value[:, :text_seq_len] = torch.nan_to_num(value_txt_new, nan=0.0, posinf=0.0, neginf=0.0)
 
         # ------------------------------------------------------------
         # Dual blocks
@@ -756,7 +862,7 @@ class FluxAttnProcessor:
                         dedup_thr=vt_dedup_cos_thr,
                     )
 
-            if apply_target_proj and (block_index in target_block_indices):
+            if (measure_target_info or apply_target_proj) and (block_index in target_block_indices):
                 v = encoder_value.reshape(encoder_value.shape[0], encoder_value.shape[1], -1)
 
                 s = 0
@@ -764,7 +870,7 @@ class FluxAttnProcessor:
                 v_slice = v[:, s:e, :]
 
                 Vret = _FLUX_VRET_DUAL.get(block_index, None)
-                U = _FLUX_U_UNION_DUAL.get(block_index, None)     # COIP identity-residual basis
+                U = _FLUX_U_UNION_DUAL.get(block_index, None)
                 A = _FLUX_A_UNION_DUAL.get(block_index, None) if use_anchors else None
                 use_replace = bool(use_anchors and (A is not None))
 
@@ -773,21 +879,31 @@ class FluxAttnProcessor:
                     A = None if A is None else A.to(device=v_slice.device, dtype=torch.float32)
                     Vret = None if Vret is None else Vret.to(device=v_slice.device, dtype=torch.float32)
 
-                    v_slice2 = _cora_erase_replace(
-                        v_slice,
-                        Vret=Vret,
-                        U=U,
-                        A=A,
-                        tau=float(strength_tau),
-                        gamma=float(strength_gamma),
-                        anchor_strength=float(anchor_strength),
-                        eps=float(proj_eps),
-                        use_replace=use_replace,
-                    )
+                    if measure_target_info:
+                        stats = _target_info_stats(
+                            v_slice=v_slice,
+                            U=U,
+                            Vret=Vret,
+                            eps=float(proj_eps),
+                        )
+                        _record_target_info_stats("dual", measure_label, block_index, stats)
 
-                    v = torch.cat([v[:, :s, :], v_slice2, v[:, e:, :]], dim=1)
-                    encoder_value = v.view_as(encoder_value)
-                    encoder_value = torch.nan_to_num(encoder_value, nan=0.0, posinf=0.0, neginf=0.0)
+                    if apply_target_proj:
+                        v_slice2 = _cora_erase_replace(
+                            v_slice,
+                            Vret=Vret,
+                            U=U,
+                            A=A,
+                            tau=float(strength_tau),
+                            gamma=float(strength_gamma),
+                            anchor_strength=float(anchor_strength),
+                            eps=float(proj_eps),
+                            use_replace=use_replace,
+                        )
+
+                        v = torch.cat([v[:, :s, :], v_slice2, v[:, e:, :]], dim=1)
+                        encoder_value = v.view_as(encoder_value)
+                        encoder_value = torch.nan_to_num(encoder_value, nan=0.0, posinf=0.0, neginf=0.0)
 
             if dual_zero_text_value:
                 encoder_value = encoder_value * 0.0
@@ -822,7 +938,7 @@ class FluxAttnProcessor:
             return hidden_states, encoder_hidden_states
 
         return hidden_states
-    
+
 class FluxAttention(torch.nn.Module, AttentionModuleMixin):
     _default_processor_cls = FluxAttnProcessor
     _available_processors = [FluxAttnProcessor]
