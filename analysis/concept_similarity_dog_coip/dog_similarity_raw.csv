@@ -1,0 +1,355 @@
+report,branch,block_index,concept,group,similarity_to_target,is_global
+raw,dual,0,Doggo,paraphrase_like,0.8224936723709106,0
+raw,dual,0,Canine,paraphrase_like,0.7897339463233948,0
+raw,dual,0,Lion,related_animals,0.833106279373169,0
+raw,dual,0,Wolf,related_animals,0.8588061332702637,0
+raw,dual,0,Apple,fruits,0.782063364982605,0
+raw,dual,0,Taylor Swift,fruits,0.6230652928352356,0
+raw,dual,1,Doggo,paraphrase_like,0.9205230474472046,0
+raw,dual,1,Canine,paraphrase_like,0.9421814680099487,0
+raw,dual,1,Lion,related_animals,0.916890025138855,0
+raw,dual,1,Wolf,related_animals,0.9326004981994629,0
+raw,dual,1,Apple,fruits,0.8918730616569519,0
+raw,dual,1,Taylor Swift,fruits,0.8213609457015991,0
+raw,dual,2,Doggo,paraphrase_like,0.9539973139762878,0
+raw,dual,2,Canine,paraphrase_like,0.9730674028396606,0
+raw,dual,2,Lion,related_animals,0.9501278400421143,0
+raw,dual,2,Wolf,related_animals,0.9375070333480835,0
+raw,dual,2,Apple,fruits,0.8481744527816772,0
+raw,dual,2,Taylor Swift,fruits,0.9173846244812012,0
+raw,dual,3,Doggo,paraphrase_like,0.9279463887214661,0
+raw,dual,3,Canine,paraphrase_like,0.9312595129013062,0
+raw,dual,3,Lion,related_animals,0.9165744185447693,0
+raw,dual,3,Wolf,related_animals,0.9106377363204956,0
+raw,dual,3,Apple,fruits,0.8228573799133301,0
+raw,dual,3,Taylor Swift,fruits,0.7699872851371765,0
+raw,dual,4,Doggo,paraphrase_like,0.9161735773086548,0
+raw,dual,4,Canine,paraphrase_like,0.9372003674507141,0
+raw,dual,4,Lion,related_animals,0.8886586427688599,0
+raw,dual,4,Wolf,related_animals,0.8824242949485779,0
+raw,dual,4,Apple,fruits,0.7624556422233582,0
+raw,dual,4,Taylor Swift,fruits,0.6698737144470215,0
+raw,dual,5,Doggo,paraphrase_like,0.9260292053222656,0
+raw,dual,5,Canine,paraphrase_like,0.9488115906715393,0
+raw,dual,5,Lion,related_animals,0.887321412563324,0
+raw,dual,5,Wolf,related_animals,0.8733344078063965,0
+raw,dual,5,Apple,fruits,0.7176636457443237,0
+raw,dual,5,Taylor Swift,fruits,0.7294689416885376,0
+raw,dual,6,Doggo,paraphrase_like,0.9288836717605591,0
+raw,dual,6,Canine,paraphrase_like,0.9454644322395325,0
+raw,dual,6,Lion,related_animals,0.8638168573379517,0
+raw,dual,6,Wolf,related_animals,0.8781254291534424,0
+raw,dual,6,Apple,fruits,0.7392242550849915,0
+raw,dual,6,Taylor Swift,fruits,0.7182377576828003,0
+raw,dual,7,Doggo,paraphrase_like,0.9463895559310913,0
+raw,dual,7,Canine,paraphrase_like,0.9651949405670166,0
+raw,dual,7,Lion,related_animals,0.8775593042373657,0
+raw,dual,7,Wolf,related_animals,0.8905011415481567,0
+raw,dual,7,Apple,fruits,0.7333913445472717,0
+raw,dual,7,Taylor Swift,fruits,0.7473448514938354,0
+raw,dual,8,Doggo,paraphrase_like,0.9476426839828491,0
+raw,dual,8,Canine,paraphrase_like,0.9529304504394531,0
+raw,dual,8,Lion,related_animals,0.8415483236312866,0
+raw,dual,8,Wolf,related_animals,0.8734354972839355,0
+raw,dual,8,Apple,fruits,0.625518262386322,0
+raw,dual,8,Taylor Swift,fruits,0.5848218202590942,0
+raw,dual,9,Doggo,paraphrase_like,0.9572154879570007,0
+raw,dual,9,Canine,paraphrase_like,0.963634192943573,0
+raw,dual,9,Lion,related_animals,0.8534244298934937,0
+raw,dual,9,Wolf,related_animals,0.8746224045753479,0
+raw,dual,9,Apple,fruits,0.6277288794517517,0
+raw,dual,9,Taylor Swift,fruits,0.6791490316390991,0
+raw,dual,10,Doggo,paraphrase_like,0.9427738785743713,0
+raw,dual,10,Canine,paraphrase_like,0.9522482752799988,0
+raw,dual,10,Lion,related_animals,0.8065491914749146,0
+raw,dual,10,Wolf,related_animals,0.8527200222015381,0
+raw,dual,10,Apple,fruits,0.6156270503997803,0
+raw,dual,10,Taylor Swift,fruits,0.5968368649482727,0
+raw,dual,11,Doggo,paraphrase_like,0.9585480690002441,0
+raw,dual,11,Canine,paraphrase_like,0.9463233947753906,0
+raw,dual,11,Lion,related_animals,0.8117902278900146,0
+raw,dual,11,Wolf,related_animals,0.8425170183181763,0
+raw,dual,11,Apple,fruits,0.5727477073669434,0
+raw,dual,11,Taylor Swift,fruits,0.5744715929031372,0
+raw,dual,12,Doggo,paraphrase_like,0.9548430442810059,0
+raw,dual,12,Canine,paraphrase_like,0.957837700843811,0
+raw,dual,12,Lion,related_animals,0.7900868654251099,0
+raw,dual,12,Wolf,related_animals,0.8459355235099792,0
+raw,dual,12,Apple,fruits,0.547143280506134,0
+raw,dual,12,Taylor Swift,fruits,0.5198487639427185,0
+raw,dual,13,Doggo,paraphrase_like,0.9636809229850769,0
+raw,dual,13,Canine,paraphrase_like,0.9562519788742065,0
+raw,dual,13,Lion,related_animals,0.8423436284065247,0
+raw,dual,13,Wolf,related_animals,0.8778309226036072,0
+raw,dual,13,Apple,fruits,0.7325471639633179,0
+raw,dual,13,Taylor Swift,fruits,0.715175211429596,0
+raw,dual,14,Doggo,paraphrase_like,0.9451361894607544,0
+raw,dual,14,Canine,paraphrase_like,0.9317570328712463,0
+raw,dual,14,Lion,related_animals,0.7836494445800781,0
+raw,dual,14,Wolf,related_animals,0.8160178661346436,0
+raw,dual,14,Apple,fruits,0.6358972191810608,0
+raw,dual,14,Taylor Swift,fruits,0.5956844687461853,0
+raw,dual,15,Doggo,paraphrase_like,0.9362839460372925,0
+raw,dual,15,Canine,paraphrase_like,0.9297252893447876,0
+raw,dual,15,Lion,related_animals,0.8139103651046753,0
+raw,dual,15,Wolf,related_animals,0.8426604270935059,0
+raw,dual,15,Apple,fruits,0.6350563764572144,0
+raw,dual,15,Taylor Swift,fruits,0.6570580005645752,0
+raw,dual,16,Doggo,paraphrase_like,0.9480123519897461,0
+raw,dual,16,Canine,paraphrase_like,0.9427973031997681,0
+raw,dual,16,Lion,related_animals,0.794264554977417,0
+raw,dual,16,Wolf,related_animals,0.8454322814941406,0
+raw,dual,16,Apple,fruits,0.7160831093788147,0
+raw,dual,16,Taylor Swift,fruits,0.6934785842895508,0
+raw,dual,17,Doggo,paraphrase_like,0.955852746963501,0
+raw,dual,17,Canine,paraphrase_like,0.955475926399231,0
+raw,dual,17,Lion,related_animals,0.8183909058570862,0
+raw,dual,17,Wolf,related_animals,0.8575714230537415,0
+raw,dual,17,Apple,fruits,0.7484931945800781,0
+raw,dual,17,Taylor Swift,fruits,0.7300726175308228,0
+raw,dual,18,Doggo,paraphrase_like,0.965720534324646,0
+raw,dual,18,Canine,paraphrase_like,0.9636173248291016,0
+raw,dual,18,Lion,related_animals,0.7918636798858643,0
+raw,dual,18,Wolf,related_animals,0.8372136950492859,0
+raw,dual,18,Apple,fruits,0.7074877619743347,0
+raw,dual,18,Taylor Swift,fruits,0.7009632587432861,0
+raw,dual,-1,Doggo,paraphrase_like,0.9377970695495605,1
+raw,dual,-1,Canine,paraphrase_like,0.9413425922393799,1
+raw,dual,-1,Lion,related_animals,0.8464144468307495,1
+raw,dual,-1,Wolf,related_animals,0.8699943423271179,1
+raw,dual,-1,Apple,fruits,0.7085279822349548,1
+raw,dual,-1,Taylor Swift,fruits,0.6865411400794983,1
+raw,single,0,Doggo,paraphrase_like,0.9621137380599976,0
+raw,single,0,Canine,paraphrase_like,0.961721658706665,0
+raw,single,0,Lion,related_animals,0.7080754041671753,0
+raw,single,0,Wolf,related_animals,0.7714309096336365,0
+raw,single,0,Apple,fruits,0.5682798624038696,0
+raw,single,0,Taylor Swift,fruits,0.5691097378730774,0
+raw,single,1,Doggo,paraphrase_like,0.958215594291687,0
+raw,single,1,Canine,paraphrase_like,0.9568191170692444,0
+raw,single,1,Lion,related_animals,0.7164387702941895,0
+raw,single,1,Wolf,related_animals,0.7774194478988647,0
+raw,single,1,Apple,fruits,0.5725062489509583,0
+raw,single,1,Taylor Swift,fruits,0.599277138710022,0
+raw,single,2,Doggo,paraphrase_like,0.9529073238372803,0
+raw,single,2,Canine,paraphrase_like,0.9559656381607056,0
+raw,single,2,Lion,related_animals,0.6870255470275879,0
+raw,single,2,Wolf,related_animals,0.7560272812843323,0
+raw,single,2,Apple,fruits,0.5802907943725586,0
+raw,single,2,Taylor Swift,fruits,0.5787999629974365,0
+raw,single,3,Doggo,paraphrase_like,0.9581965804100037,0
+raw,single,3,Canine,paraphrase_like,0.9567146301269531,0
+raw,single,3,Lion,related_animals,0.6439156532287598,0
+raw,single,3,Wolf,related_animals,0.7126289010047913,0
+raw,single,3,Apple,fruits,0.4938563108444214,0
+raw,single,3,Taylor Swift,fruits,0.4667378067970276,0
+raw,single,4,Doggo,paraphrase_like,0.962949275970459,0
+raw,single,4,Canine,paraphrase_like,0.9540599584579468,0
+raw,single,4,Lion,related_animals,0.6526446342468262,0
+raw,single,4,Wolf,related_animals,0.7096607089042664,0
+raw,single,4,Apple,fruits,0.49686193466186523,0
+raw,single,4,Taylor Swift,fruits,0.42653974890708923,0
+raw,single,5,Doggo,paraphrase_like,0.9595880508422852,0
+raw,single,5,Canine,paraphrase_like,0.9526439309120178,0
+raw,single,5,Lion,related_animals,0.6067745685577393,0
+raw,single,5,Wolf,related_animals,0.7028605937957764,0
+raw,single,5,Apple,fruits,0.4804173707962036,0
+raw,single,5,Taylor Swift,fruits,0.4793711304664612,0
+raw,single,6,Doggo,paraphrase_like,0.9612107872962952,0
+raw,single,6,Canine,paraphrase_like,0.9536651968955994,0
+raw,single,6,Lion,related_animals,0.6129001379013062,0
+raw,single,6,Wolf,related_animals,0.7144729495048523,0
+raw,single,6,Apple,fruits,0.5135512948036194,0
+raw,single,6,Taylor Swift,fruits,0.5400099158287048,0
+raw,single,7,Doggo,paraphrase_like,0.9601318836212158,0
+raw,single,7,Canine,paraphrase_like,0.9517119526863098,0
+raw,single,7,Lion,related_animals,0.6592584848403931,0
+raw,single,7,Wolf,related_animals,0.738398551940918,0
+raw,single,7,Apple,fruits,0.5522596836090088,0
+raw,single,7,Taylor Swift,fruits,0.5769808292388916,0
+raw,single,8,Doggo,paraphrase_like,0.95827317237854,0
+raw,single,8,Canine,paraphrase_like,0.9464811682701111,0
+raw,single,8,Lion,related_animals,0.5866729021072388,0
+raw,single,8,Wolf,related_animals,0.6814431548118591,0
+raw,single,8,Apple,fruits,0.49975430965423584,0
+raw,single,8,Taylor Swift,fruits,0.5302731990814209,0
+raw,single,9,Doggo,paraphrase_like,0.9566599130630493,0
+raw,single,9,Canine,paraphrase_like,0.9494653344154358,0
+raw,single,9,Lion,related_animals,0.542029619216919,0
+raw,single,9,Wolf,related_animals,0.6934710144996643,0
+raw,single,9,Apple,fruits,0.5214203596115112,0
+raw,single,9,Taylor Swift,fruits,0.5853322744369507,0
+raw,single,10,Doggo,paraphrase_like,0.9601553678512573,0
+raw,single,10,Canine,paraphrase_like,0.946162760257721,0
+raw,single,10,Lion,related_animals,0.6072322130203247,0
+raw,single,10,Wolf,related_animals,0.7080183625221252,0
+raw,single,10,Apple,fruits,0.6349026560783386,0
+raw,single,10,Taylor Swift,fruits,0.6393252611160278,0
+raw,single,11,Doggo,paraphrase_like,0.9490811824798584,0
+raw,single,11,Canine,paraphrase_like,0.9381188750267029,0
+raw,single,11,Lion,related_animals,0.6686317920684814,0
+raw,single,11,Wolf,related_animals,0.738082766532898,0
+raw,single,11,Apple,fruits,0.636276364326477,0
+raw,single,11,Taylor Swift,fruits,0.6531331539154053,0
+raw,single,12,Doggo,paraphrase_like,0.9525657892227173,0
+raw,single,12,Canine,paraphrase_like,0.9451115131378174,0
+raw,single,12,Lion,related_animals,0.657594621181488,0
+raw,single,12,Wolf,related_animals,0.7376123666763306,0
+raw,single,12,Apple,fruits,0.6701014041900635,0
+raw,single,12,Taylor Swift,fruits,0.6724785566329956,0
+raw,single,13,Doggo,paraphrase_like,0.9543147087097168,0
+raw,single,13,Canine,paraphrase_like,0.9393326640129089,0
+raw,single,13,Lion,related_animals,0.696707546710968,0
+raw,single,13,Wolf,related_animals,0.7583211064338684,0
+raw,single,13,Apple,fruits,0.7126228213310242,0
+raw,single,13,Taylor Swift,fruits,0.7392337322235107,0
+raw,single,14,Doggo,paraphrase_like,0.9611397385597229,0
+raw,single,14,Canine,paraphrase_like,0.9493793249130249,0
+raw,single,14,Lion,related_animals,0.810432493686676,0
+raw,single,14,Wolf,related_animals,0.8371081352233887,0
+raw,single,14,Apple,fruits,0.7891089916229248,0
+raw,single,14,Taylor Swift,fruits,0.8148355484008789,0
+raw,single,15,Doggo,paraphrase_like,0.9561243057250977,0
+raw,single,15,Canine,paraphrase_like,0.9358259439468384,0
+raw,single,15,Lion,related_animals,0.8011316061019897,0
+raw,single,15,Wolf,related_animals,0.8515170812606812,0
+raw,single,15,Apple,fruits,0.7565826177597046,0
+raw,single,15,Taylor Swift,fruits,0.7685903310775757,0
+raw,single,16,Doggo,paraphrase_like,0.9480063319206238,0
+raw,single,16,Canine,paraphrase_like,0.9243971109390259,0
+raw,single,16,Lion,related_animals,0.8486510515213013,0
+raw,single,16,Wolf,related_animals,0.8663896322250366,0
+raw,single,16,Apple,fruits,0.7843568325042725,0
+raw,single,16,Taylor Swift,fruits,0.8142094612121582,0
+raw,single,17,Doggo,paraphrase_like,0.9422705769538879,0
+raw,single,17,Canine,paraphrase_like,0.9301760196685791,0
+raw,single,17,Lion,related_animals,0.8736721277236938,0
+raw,single,17,Wolf,related_animals,0.8821161389350891,0
+raw,single,17,Apple,fruits,0.7861276865005493,0
+raw,single,17,Taylor Swift,fruits,0.8158076405525208,0
+raw,single,18,Doggo,paraphrase_like,0.9465558528900146,0
+raw,single,18,Canine,paraphrase_like,0.9282073378562927,0
+raw,single,18,Lion,related_animals,0.8750448822975159,0
+raw,single,18,Wolf,related_animals,0.8885252475738525,0
+raw,single,18,Apple,fruits,0.8179836273193359,0
+raw,single,18,Taylor Swift,fruits,0.8442685604095459,0
+raw,single,19,Doggo,paraphrase_like,0.9470819234848022,0
+raw,single,19,Canine,paraphrase_like,0.9238345623016357,0
+raw,single,19,Lion,related_animals,0.8973323702812195,0
+raw,single,19,Wolf,related_animals,0.8907997608184814,0
+raw,single,19,Apple,fruits,0.8387018442153931,0
+raw,single,19,Taylor Swift,fruits,0.863531231880188,0
+raw,single,20,Doggo,paraphrase_like,0.9470384120941162,0
+raw,single,20,Canine,paraphrase_like,0.9263606667518616,0
+raw,single,20,Lion,related_animals,0.8939430713653564,0
+raw,single,20,Wolf,related_animals,0.8981539011001587,0
+raw,single,20,Apple,fruits,0.8219466209411621,0
+raw,single,20,Taylor Swift,fruits,0.8680672645568848,0
+raw,single,21,Doggo,paraphrase_like,0.9500192999839783,0
+raw,single,21,Canine,paraphrase_like,0.9310570955276489,0
+raw,single,21,Lion,related_animals,0.8953560590744019,0
+raw,single,21,Wolf,related_animals,0.9139107465744019,0
+raw,single,21,Apple,fruits,0.8418987393379211,0
+raw,single,21,Taylor Swift,fruits,0.8794155120849609,0
+raw,single,22,Doggo,paraphrase_like,0.9498276710510254,0
+raw,single,22,Canine,paraphrase_like,0.9409701228141785,0
+raw,single,22,Lion,related_animals,0.9161782264709473,0
+raw,single,22,Wolf,related_animals,0.9269063472747803,0
+raw,single,22,Apple,fruits,0.8386821746826172,0
+raw,single,22,Taylor Swift,fruits,0.8935373425483704,0
+raw,single,23,Doggo,paraphrase_like,0.9659130573272705,0
+raw,single,23,Canine,paraphrase_like,0.9543178677558899,0
+raw,single,23,Lion,related_animals,0.9338055849075317,0
+raw,single,23,Wolf,related_animals,0.9424026012420654,0
+raw,single,23,Apple,fruits,0.8689881563186646,0
+raw,single,23,Taylor Swift,fruits,0.910473108291626,0
+raw,single,24,Doggo,paraphrase_like,0.9705816507339478,0
+raw,single,24,Canine,paraphrase_like,0.9661526679992676,0
+raw,single,24,Lion,related_animals,0.9510419964790344,0
+raw,single,24,Wolf,related_animals,0.9556944966316223,0
+raw,single,24,Apple,fruits,0.8808270692825317,0
+raw,single,24,Taylor Swift,fruits,0.9267282485961914,0
+raw,single,25,Doggo,paraphrase_like,0.956494152545929,0
+raw,single,25,Canine,paraphrase_like,0.9472015500068665,0
+raw,single,25,Lion,related_animals,0.9392861127853394,0
+raw,single,25,Wolf,related_animals,0.932902991771698,0
+raw,single,25,Apple,fruits,0.8520431518554688,0
+raw,single,25,Taylor Swift,fruits,0.8957999348640442,0
+raw,single,26,Doggo,paraphrase_like,0.9606914520263672,0
+raw,single,26,Canine,paraphrase_like,0.9559474587440491,0
+raw,single,26,Lion,related_animals,0.9505650401115417,0
+raw,single,26,Wolf,related_animals,0.9372919797897339,0
+raw,single,26,Apple,fruits,0.8638632297515869,0
+raw,single,26,Taylor Swift,fruits,0.9275094866752625,0
+raw,single,27,Doggo,paraphrase_like,0.9616723656654358,0
+raw,single,27,Canine,paraphrase_like,0.9541645050048828,0
+raw,single,27,Lion,related_animals,0.945845901966095,0
+raw,single,27,Wolf,related_animals,0.9382465481758118,0
+raw,single,27,Apple,fruits,0.8734625577926636,0
+raw,single,27,Taylor Swift,fruits,0.9261871576309204,0
+raw,single,28,Doggo,paraphrase_like,0.9655932188034058,0
+raw,single,28,Canine,paraphrase_like,0.9505919814109802,0
+raw,single,28,Lion,related_animals,0.9504719972610474,0
+raw,single,28,Wolf,related_animals,0.9407833218574524,0
+raw,single,28,Apple,fruits,0.8713539838790894,0
+raw,single,28,Taylor Swift,fruits,0.9357227087020874,0
+raw,single,29,Doggo,paraphrase_like,0.966579794883728,0
+raw,single,29,Canine,paraphrase_like,0.946190357208252,0
+raw,single,29,Lion,related_animals,0.957443118095398,0
+raw,single,29,Wolf,related_animals,0.9401936531066895,0
+raw,single,29,Apple,fruits,0.8799315690994263,0
+raw,single,29,Taylor Swift,fruits,0.9308829307556152,0
+raw,single,30,Doggo,paraphrase_like,0.9618873596191406,0
+raw,single,30,Canine,paraphrase_like,0.9287543296813965,0
+raw,single,30,Lion,related_animals,0.9453508257865906,0
+raw,single,30,Wolf,related_animals,0.93389892578125,0
+raw,single,30,Apple,fruits,0.8558871746063232,0
+raw,single,30,Taylor Swift,fruits,0.928702175617218,0
+raw,single,31,Doggo,paraphrase_like,0.9641804695129395,0
+raw,single,31,Canine,paraphrase_like,0.9283612966537476,0
+raw,single,31,Lion,related_animals,0.9459196925163269,0
+raw,single,31,Wolf,related_animals,0.9330968856811523,0
+raw,single,31,Apple,fruits,0.8783851861953735,0
+raw,single,31,Taylor Swift,fruits,0.9365195035934448,0
+raw,single,32,Doggo,paraphrase_like,0.9578373432159424,0
+raw,single,32,Canine,paraphrase_like,0.9107568860054016,0
+raw,single,32,Lion,related_animals,0.940400242805481,0
+raw,single,32,Wolf,related_animals,0.9126125574111938,0
+raw,single,32,Apple,fruits,0.8382738828659058,0
+raw,single,32,Taylor Swift,fruits,0.9126651287078857,0
+raw,single,33,Doggo,paraphrase_like,0.9597791433334351,0
+raw,single,33,Canine,paraphrase_like,0.922957181930542,0
+raw,single,33,Lion,related_animals,0.9461804628372192,0
+raw,single,33,Wolf,related_animals,0.923097550868988,0
+raw,single,33,Apple,fruits,0.8560793399810791,0
+raw,single,33,Taylor Swift,fruits,0.9353627562522888,0
+raw,single,34,Doggo,paraphrase_like,0.9610874652862549,0
+raw,single,34,Canine,paraphrase_like,0.9423525333404541,0
+raw,single,34,Lion,related_animals,0.9571406841278076,0
+raw,single,34,Wolf,related_animals,0.9388517737388611,0
+raw,single,34,Apple,fruits,0.8628694415092468,0
+raw,single,34,Taylor Swift,fruits,0.9444926977157593,0
+raw,single,35,Doggo,paraphrase_like,0.9355897903442383,0
+raw,single,35,Canine,paraphrase_like,0.9236775040626526,0
+raw,single,35,Lion,related_animals,0.926792562007904,0
+raw,single,35,Wolf,related_animals,0.9232819080352783,0
+raw,single,35,Apple,fruits,0.8399524688720703,0
+raw,single,35,Taylor Swift,fruits,0.9169871807098389,0
+raw,single,36,Doggo,paraphrase_like,0.940660297870636,0
+raw,single,36,Canine,paraphrase_like,0.9079070687294006,0
+raw,single,36,Lion,related_animals,0.8906426429748535,0
+raw,single,36,Wolf,related_animals,0.8608177304267883,0
+raw,single,36,Apple,fruits,0.7665523290634155,0
+raw,single,36,Taylor Swift,fruits,0.8956307768821716,0
+raw,single,37,Doggo,paraphrase_like,0.9755158424377441,0
+raw,single,37,Canine,paraphrase_like,0.9736400842666626,0
+raw,single,37,Lion,related_animals,0.9548724889755249,0
+raw,single,37,Wolf,related_animals,0.9708458185195923,0
+raw,single,37,Apple,fruits,0.9330055713653564,0
+raw,single,37,Taylor Swift,fruits,0.9741196632385254,0
+raw,single,-1,Doggo,paraphrase_like,0.9568023681640625,1
+raw,single,-1,Canine,paraphrase_like,0.9423988461494446,1
+raw,single,-1,Lion,related_animals,0.8156158924102783,1
+raw,single,-1,Wolf,related_animals,0.8457708358764648,1
+raw,single,-1,Apple,fruits,0.7402622699737549,1
+raw,single,-1,Taylor Swift,fruits,0.7767539024353027,1

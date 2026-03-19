@@ -332,6 +332,142 @@ def _basis_from_vt_list(v_list: Optional[List[torch.Tensor]], *, top_k: int = 6,
 def _retain_basis_from_vt_list(v_list: Optional[List[torch.Tensor]], *, top_k: int = 3) -> Optional[torch.Tensor]:
     return _basis_from_vt_list(v_list, top_k=top_k)
 
+# ============================================================
+# Concept similarity helpers
+# ============================================================
+
+def _concept_dir_from_vt_list(
+    v_list: Optional[List[torch.Tensor]],
+    *,
+    eps: float = 1e-8,
+) -> Optional[torch.Tensor]:
+    """
+    Build one prototype direction for a concept at one block.
+
+    We:
+      1) convert each recorded VT -> normalized direction
+      2) average them
+      3) renormalize
+
+    Returns shape: [D]
+    """
+    if v_list is None or len(v_list) == 0:
+        return None
+
+    dirs: List[torch.Tensor] = []
+    for vt in v_list:
+        d = _vt_to_dir(vt, eps=eps)
+        if d.norm() <= eps:
+            continue
+        d = d / (d.norm() + eps)
+        dirs.append(d)
+
+    if len(dirs) == 0:
+        return None
+
+    mean_dir = torch.stack(dirs, dim=0).mean(dim=0)
+    mean_dir = mean_dir / (mean_dir.norm() + eps)
+    return mean_dir
+
+
+def _concept_bank_to_prototypes(
+    bank: Dict[int, Dict[str, List[torch.Tensor]]],
+    *,
+    eps: float = 1e-8,
+) -> Dict[int, Dict[str, torch.Tensor]]:
+    """
+    Converts:
+      bank[block][concept] -> list of VT tensors
+    into:
+      prototypes[block][concept] -> one normalized prototype vector
+    """
+    out: Dict[int, Dict[str, torch.Tensor]] = {}
+
+    for blk, concept_map in bank.items():
+        out[blk] = {}
+        for concept, vt_list in concept_map.items():
+            proto = _concept_dir_from_vt_list(vt_list, eps=eps)
+            if proto is not None:
+                out[blk][concept] = proto
+
+    return out
+
+
+def flux_get_concept_similarity_report(
+    *,
+    target_concept: str,
+    other_concepts: List[str],
+    eps: float = 1e-8,
+) -> Dict[str, Dict]:
+    """
+    Returns cosine similarity report between target_concept and other_concepts.
+
+    Output structure:
+    {
+      "dual": {
+        "per_block": {
+          block_idx: {
+             "Doggo": 0.91,
+             "Canine": 0.87,
+             ...
+          }, ...
+        },
+        "global": {
+          "Doggo": 0.90,
+          "Canine": 0.85,
+          ...
+        }
+      },
+      "single": {...}
+    }
+
+    'global' is computed by concatenating per-block prototype vectors
+    (only blocks where both target and other concept exist).
+    """
+    dual_proto = _concept_bank_to_prototypes(_FLUX_TARGET_VT_BANK_DUAL, eps=eps)
+    single_proto = _concept_bank_to_prototypes(_FLUX_TARGET_VT_BANK_SINGLE, eps=eps)
+
+    def _compute(proto_bank: Dict[int, Dict[str, torch.Tensor]]) -> Dict[str, Dict]:
+        per_block: Dict[int, Dict[str, float]] = {}
+        global_store: Dict[str, List[Tuple[torch.Tensor, torch.Tensor]]] = {
+            c: [] for c in other_concepts
+        }
+
+        for blk, cmap in proto_bank.items():
+            if target_concept not in cmap:
+                continue
+
+            t = cmap[target_concept]
+            per_block[blk] = {}
+
+            for c in other_concepts:
+                if c not in cmap:
+                    continue
+
+                o = cmap[c]
+                sim = _cos_sim_flat(t, o, eps=eps)
+                per_block[blk][c] = sim
+                global_store[c].append((t, o))
+
+        global_scores: Dict[str, float] = {}
+        for c, pairs in global_store.items():
+            if len(pairs) == 0:
+                continue
+
+            t_cat = torch.cat([p[0] for p in pairs], dim=0)
+            o_cat = torch.cat([p[1] for p in pairs], dim=0)
+            global_scores[c] = _cos_sim_flat(t_cat, o_cat, eps=eps)
+
+        return {
+            "per_block": per_block,
+            "global": global_scores,
+        }
+
+    return {
+        "dual": _compute(dual_proto),
+        "single": _compute(single_proto),
+    }
+
 def flux_finalize_cora_bases(
     *,
     retain_top_k: int = 6,
@@ -518,6 +654,159 @@ def flux_finalize_cora_bases(
             _FLUX_U_UNION_SINGLE,
         )
     )
+
+# ============================================================
+# Concept similarity report with optional COIP cleaning
+# ============================================================
+
+def _concept_dir_from_vt_list(
+    v_list: Optional[List[torch.Tensor]],
+    *,
+    eps: float = 1e-8,
+) -> Optional[torch.Tensor]:
+    if v_list is None or len(v_list) == 0:
+        return None
+
+    dirs: List[torch.Tensor] = []
+    for vt in v_list:
+        d = _vt_to_dir(vt, eps=eps)
+        if d.norm() <= eps:
+            continue
+        d = d / (d.norm() + eps)
+        dirs.append(d)
+
+    if len(dirs) == 0:
+        return None
+
+    m = torch.stack(dirs, dim=0).mean(dim=0)
+    m = m / (m.norm() + eps)
+    return m
+
+
+def _concept_bank_to_proto_dirs(
+    bank: Dict[int, Dict[str, List[torch.Tensor]]],
+    *,
+    eps: float = 1e-8,
+) -> Dict[int, Dict[str, torch.Tensor]]:
+    out: Dict[int, Dict[str, torch.Tensor]] = {}
+    for blk, concept_map in bank.items():
+        out[blk] = {}
+        for concept, vt_list in concept_map.items():
+            d = _concept_dir_from_vt_list(vt_list, eps=eps)
+            if d is not None:
+                out[blk][concept] = d
+    return out
+
+
+def _free_dir_against_bases(
+    d: torch.Tensor,
+    *,
+    Vret: Optional[torch.Tensor],
+    Vperson: Optional[torch.Tensor],
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    out = d
+
+    if Vret is not None and Vret.numel() > 0 and Vret.shape[1] > 0:
+        proj = Vret @ (Vret.t() @ out)
+        out = out - _FLUX_RETAIN_LAMBDA * proj
+
+    if Vperson is not None and Vperson.numel() > 0 and Vperson.shape[1] > 0:
+        proj = Vperson @ (Vperson.t() @ out)
+        out = out - proj
+
+    if out.norm() <= eps:
+        return out
+    return out / (out.norm() + eps)
+
+
+def flux_get_concept_similarity_report_coip(
+    *,
+    target_concept: str,
+    other_concepts: List[str],
+    cleaned: bool = True,
+    eps: float = 1e-8,
+) -> Dict[str, Dict]:
+    """
+    Similarity report between target_concept and other_concepts.
+
+    cleaned=False:
+        uses raw prototype directions from recorded VT banks.
+
+    cleaned=True:
+        first removes retain and generic/category subspaces using
+        finalized Vret / Vperson, then computes similarity.
+
+    Returns:
+    {
+      "dual": {
+        "per_block": { blk: {concept: sim, ...}, ... },
+        "global": { concept: sim, ... }
+      },
+      "single": ...
+    }
+    """
+    dual_proto = _concept_bank_to_proto_dirs(_FLUX_TARGET_VT_BANK_DUAL, eps=eps)
+    single_proto = _concept_bank_to_proto_dirs(_FLUX_TARGET_VT_BANK_SINGLE, eps=eps)
+
+    def _compute(
+        proto_bank: Dict[int, Dict[str, torch.Tensor]],
+        Vret_bank: Dict[int, torch.Tensor],
+        Vperson_bank: Dict[int, torch.Tensor],
+    ) -> Dict[str, Dict]:
+        per_block: Dict[int, Dict[str, float]] = {}
+        global_pairs: Dict[str, List[Tuple[torch.Tensor, torch.Tensor]]] = {
+            c: [] for c in other_concepts
+        }
+
+        for blk, concept_map in proto_bank.items():
+            if target_concept not in concept_map:
+                continue
+
+            t = concept_map[target_concept]
+
+            Vret = Vret_bank.get(blk, None)
+            Vperson = Vperson_bank.get(blk, None)
+
+            if cleaned:
+                t = _free_dir_against_bases(t, Vret=Vret, Vperson=Vperson, eps=eps)
+                if t.norm() <= eps:
+                    continue
+
+            per_block[blk] = {}
+
+            for c in other_concepts:
+                if c not in concept_map:
+                    continue
+
+                o = concept_map[c]
+                if cleaned:
+                    o = _free_dir_against_bases(o, Vret=Vret, Vperson=Vperson, eps=eps)
+                    if o.norm() <= eps:
+                        continue
+
+                sim = _cos_sim_flat(t, o, eps=eps)
+                per_block[blk][c] = sim
+                global_pairs[c].append((t, o))
+
+        global_scores: Dict[str, float] = {}
+        for c, pairs in global_pairs.items():
+            if len(pairs) == 0:
+                continue
+            t_cat = torch.cat([x[0] for x in pairs], dim=0)
+            o_cat = torch.cat([x[1] for x in pairs], dim=0)
+            global_scores[c] = _cos_sim_flat(t_cat, o_cat, eps=eps)
+
+        return {
+            "per_block": per_block,
+            "global": global_scores,
+        }
+
+    return {
+        "dual": _compute(dual_proto, _FLUX_VRET_DUAL, _FLUX_VPERSON_DUAL),
+        "single": _compute(single_proto, _FLUX_VRET_SINGLE, _FLUX_VPERSON_SINGLE),
+    }
+
 
 def _get_projections(attn: "FluxAttention", hidden_states, encoder_hidden_states=None):
     query = attn.to_q(hidden_states)
