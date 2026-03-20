@@ -597,12 +597,15 @@ class FluxPipeline(
         clip_prompt = prompt
         if disable_clip:
             clip_prompt = prompt_2 if (prompt_2 is not None) else prompt
-        clip_end = _compute_proj_token_end_from_clip(
-            self.tokenizer,
-            clip_prompt,
-            tokenizer_max_length=self.tokenizer_max_length,
-        )
-        proj_end = int(max(1, min(clip_end, T5L)))
+        # clip_end = _compute_proj_token_end_from_clip(
+        #     self.tokenizer,
+        #     clip_prompt,
+        #     tokenizer_max_length=self.tokenizer_max_length,
+        # )
+        # proj_end = int(max(1, min(clip_end, T5L)))
+        # self._joint_attention_kwargs["proj_token_end"] = proj_end
+        t5_eos = _first_eos_pos(self.tokenizer_2, t5_prompt, max_len=max_sequence_length)
+        proj_end = int(max(1, min(t5_eos, T5L)))
         self._joint_attention_kwargs["proj_token_end"] = proj_end
 
         num_channels_latents = self.transformer.config.in_channels // 4
