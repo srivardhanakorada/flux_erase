@@ -41,9 +41,9 @@ PERSON_BANK = [
 ]
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
-OUTDIR = f"results_new/ours/single_art_ours"
+OUTDIR = f"results/ours/single_art_ours"
 STRENGTH_TAU = 0.1
-STRENGTH_GAMMA = 1.75
+STRENGTH_GAMMA = 1.5
 ANCHOR_STRENGTH = 1.0
 USE_ANCHORS = False
 ANCHOR = "a portrait of a art"
@@ -185,7 +185,7 @@ def main():
         person_top_k=PERSON_TOP_K,
     )
     _maybe_clear_cache()
-    generate_images(pipe, TARGETS, PROMPT_TEMPLATES, split_name="targets")
+    # generate_images(pipe, TARGETS, PROMPT_TEMPLATES, split_name="targets")
     generate_images(pipe, RETAINS, PROMPT_TEMPLATES, split_name="retains")
     print(f"Done. Results saved to: {OUTDIR}")
 

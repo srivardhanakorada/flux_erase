@@ -1,3 +1,4 @@
+## DONE
 import os
 from typing import List, Optional
 import torch  # type: ignore
@@ -46,9 +47,9 @@ PERSON_BANK = [
 ]
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
-OUTDIR = f"results_new/ours/single_celeb_ours"
+OUTDIR = f"results/ours/single_celeb_ours"
 STRENGTH_TAU = 0.1
-STRENGTH_GAMMA = 1.75
+STRENGTH_GAMMA = 1.5
 ANCHOR_STRENGTH = 1.0
 USE_ANCHORS = False
 ANCHOR = "a portrait of a person"

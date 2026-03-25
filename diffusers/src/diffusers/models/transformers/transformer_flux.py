@@ -61,7 +61,7 @@ _FLUX_A_UNION_DUAL: Dict[int, torch.Tensor] = {}
 _FLUX_A_UNION_SINGLE: Dict[int, torch.Tensor] = {}
 
 _VT_DEDUP_COS_THR = 0.995
-_FLUX_RETAIN_LAMBDA = 0.75
+_FLUX_RETAIN_LAMBDA = 1.5
 
 
 def flux_reset_vt_banks(reset_retain: bool = True):

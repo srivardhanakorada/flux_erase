@@ -46,9 +46,9 @@ PERSON_BANK = [
 ]
 DUAL_BLOCKS = list(range(0, 19))
 SINGLE_BLOCKS = list(range(0, 38))
-OUTDIR = f"results_new/ours/multi_object_ours"
+OUTDIR = f"results/ours/multi_object_ours"
 STRENGTH_TAU = 0.1
-STRENGTH_GAMMA = 2.0
+STRENGTH_GAMMA = 1.5
 ANCHOR_STRENGTH = 1.0
 USE_ANCHORS = False
 ANCHOR = "a photo of a fruit"
@@ -190,7 +190,7 @@ def main():
         person_top_k=PERSON_TOP_K,
     )
     _maybe_clear_cache()
-    generate_images(pipe, TARGETS, PROMPT_TEMPLATES, split_name="targets")
+    generate_images(pipe, ["Lemon","Jackfruit"], PROMPT_TEMPLATES, split_name="targets")
     generate_images(pipe, RETAINS, PROMPT_TEMPLATES, split_name="retains")
     generate_images(pipe, NON_TARGETS, PROMPT_TEMPLATES, split_name="non_targets")
     print(f"Done. Results saved to: {OUTDIR}")
