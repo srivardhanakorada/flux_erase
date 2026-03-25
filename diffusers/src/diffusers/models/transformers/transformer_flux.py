@@ -882,7 +882,7 @@ class FluxAttention(torch.nn.Module, AttentionModuleMixin):
         **kwargs,
     ) -> torch.Tensor:
         attn_parameters = set(inspect.signature(self.processor.__call__).parameters.keys())
-        quiet_attn_parameters = {"ip_adapter_masks", "ip_hidden_states", "debug_tokens"}
+        quiet_attn_parameters = {"ip_adapter_masks", "ip_hidden_states", "debug_tokens","prompt_tag"}
         unused_kwargs = [k for k in kwargs.keys() if (k not in attn_parameters and k not in quiet_attn_parameters)]
         if len(unused_kwargs) > 0:
             logger.warning(
